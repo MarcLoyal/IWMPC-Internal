@@ -38,6 +38,25 @@ const EMPTY = {
 
 type Form = typeof EMPTY;
 
+const ID_TYPES = [
+  'National ID (PhilSys)',
+  "Driver's License",
+  'Passport',
+  "Voter's ID",
+  'Senior Citizen ID',
+  'UMID',
+  'SSS ID',
+  'GSIS ID',
+  'PhilHealth ID',
+  'Pag-IBIG ID',
+  'Postal ID',
+  'PRC ID',
+  'TIN ID',
+  'PWD ID',
+  'Barangay ID',
+  'Other',
+];
+
 function Section({ title, note, children }: { title: string; note?: string; children: ReactNode }) {
   return (
     <Card className="p-6">
@@ -230,7 +249,7 @@ export function AccountForm({ makeMember = false }: { makeMember?: boolean }) {
           <Field label="Contact number" className="sm:col-span-2">
             {input('phone', { inputMode: 'tel' })}
           </Field>
-          <Field label="TIN" className="sm:col-span-2">
+          <Field label="TIN (optional)" className="sm:col-span-2">
             {input('tin')}
           </Field>
           <Field label="Religion" className="sm:col-span-2">
@@ -239,8 +258,17 @@ export function AccountForm({ makeMember = false }: { makeMember?: boolean }) {
           <Field label="Highest educational attainment" className="sm:col-span-6">
             {input('education')}
           </Field>
-          <Field label="ID type" hint="e.g. Voter's ID, Senior Citizen ID" className="sm:col-span-3">
-            {input('idType')}
+          <Field label="ID type" className="sm:col-span-3">
+            <select className="input" value={form.idType} onChange={set('idType')}>
+              <option value="">Choose…</option>
+              {/* An ID typed in before this list existed is kept as it is. */}
+              {form.idType && !ID_TYPES.includes(form.idType) && <option value={form.idType}>{form.idType}</option>}
+              {ID_TYPES.map((t) => (
+                <option key={t} value={t}>
+                  {t}
+                </option>
+              ))}
+            </select>
           </Field>
           <Field label="ID number" className="sm:col-span-3">
             {input('idNumber')}
