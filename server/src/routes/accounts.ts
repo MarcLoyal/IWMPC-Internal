@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { Router } from 'express';
 import { Prisma } from '@prisma/client';
 import { z } from 'zod';
@@ -307,11 +308,6 @@ accountsRouter.post(
 );
 
 const connectionSchema = z.object({
-  connectionNumber: z
-    .string({ required_error: 'Please type the connection or meter number.' })
-    .trim()
-    .min(1, 'Please type the connection or meter number.')
-    .max(50),
   applicationDate: optionalDate,
   meterName: z.string().trim().max(150).default(''),
   meterSerial: z.string().trim().max(60).default(''),
@@ -327,21 +323,22 @@ accountsRouter.post(
     const data = connectionSchema.parse(req.body);
     const account = await prisma.account.findUnique({ where: { id } });
     if (!account) throw notFound('This account');
-    const existing = await prisma.waterConnection.findUnique({
-      where: { connectionNumber: data.connectionNumber },
-      include: { account: { select: { fullName: true } } },
-    });
-    if (existing) {
-      throw new AppError(
-        409,
-        `Connection number ${data.connectionNumber} is already used by ${existing.account.fullName}.`,
-      );
+    // A meter can only be on one connection.
+    if (data.meterSerial) {
+      const existing = await prisma.waterConnection.findFirst({
+        where: { meterSerial: { equals: data.meterSerial, mode: 'insensitive' } },
+        include: { account: { select: { fullName: true } } },
+      });
+      if (existing) {
+        throw new AppError(409, `Water meter serial number ${data.meterSerial} is already used by ${existing.account.fullName}.`);
+      }
     }
     const connection = await prisma.$transaction(async (tx) => {
       const created = await tx.waterConnection.create({
         data: {
           accountId: id,
-          connectionNumber: data.connectionNumber,
+          // Staff never type this. It is the system's own reference, set just below.
+          connectionNumber: `new-${randomUUID()}`,
           applicationDate: toDbDate(data.applicationDate ?? todayManila()),
           meterName: data.meterName || account.fullName,
           meterSerial: data.meterSerial,
@@ -349,8 +346,12 @@ accountsRouter.post(
           remarks: data.remarks,
         },
       });
-      await audit(tx, req.user!.id, 'connection.create', 'connection', created.id, null, created);
-      return created;
+      const numbered = await tx.waterConnection.update({
+        where: { id: created.id },
+        data: { connectionNumber: `C-${String(created.id).padStart(5, '0')}` },
+      });
+      await audit(tx, req.user!.id, 'connection.create', 'connection', created.id, null, numbered);
+      return numbered;
     });
     res.status(201).json(connectionJson(connection));
   }),

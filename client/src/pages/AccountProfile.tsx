@@ -229,10 +229,9 @@ export function AccountProfile() {
             <p className="px-6 py-10 text-center text-slate-500">This account has no water connection yet.</p>
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[860px] print:min-w-0">
+              <table className="w-full min-w-[760px] print:min-w-0">
                 <thead className="border-b border-slate-200 bg-slate-50">
                   <tr>
-                    <th className="th">Connection No.</th>
                     <th className="th">Water Meter</th>
                     <th className="th">Address</th>
                     <th className="th">Applied</th>
@@ -244,9 +243,8 @@ export function AccountProfile() {
                 <tbody className="divide-y divide-slate-100">
                   {connections.map((c) => (
                     <tr key={c.id}>
-                      <td className="td font-semibold tabular-nums">{c.connectionNumber}</td>
                       <td className="td">
-                        {c.meterSerial ? <span className="tabular-nums">Serial {c.meterSerial}</span> : '—'}
+                        <span className="font-semibold tabular-nums">{c.meterSerial ? `Serial ${c.meterSerial}` : 'No serial number yet'}</span>
                         {c.meterName && <span className="block text-sm text-slate-500">Name: {c.meterName}</span>}
                       </td>
                       <td className="td">
@@ -396,7 +394,6 @@ function AddConnectionDialog({
 }) {
   const [form, setForm] = useState({
     applicationDate: new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Manila' }),
-    connectionNumber: '',
     meterSerial: '',
     meterName: accountName,
     address: defaultAddress,
@@ -428,7 +425,7 @@ function AddConnectionDialog({
           <Button onClick={onClose} disabled={saving}>
             Cancel
           </Button>
-          <Button variant="primary" onClick={save} disabled={saving || !form.connectionNumber.trim()}>
+          <Button variant="primary" onClick={save} disabled={saving}>
             {saving ? 'Saving…' : 'Save Connection'}
           </Button>
         </>
@@ -438,14 +435,11 @@ function AddConnectionDialog({
         <Field label="Date of application">
           <input className="input" type="date" value={form.applicationDate} onChange={set('applicationDate')} />
         </Field>
-        <Field label="Connection number">
-          <input className="input" value={form.connectionNumber} onChange={set('connectionNumber')} autoFocus />
-        </Field>
         <Field label="Name on the water meter">
           <input className="input" value={form.meterName} onChange={set('meterName')} />
         </Field>
         <Field label="Water meter serial number">
-          <input className="input" value={form.meterSerial} onChange={set('meterSerial')} />
+          <input className="input" value={form.meterSerial} onChange={set('meterSerial')} autoFocus />
         </Field>
         <Field label="Connection address" className="sm:col-span-2">
           <input className="input" value={form.address} onChange={set('address')} />
@@ -498,6 +492,7 @@ function ConnectionStatusDialog({
     }
   }
 
+  const which = connection.meterSerial ? <>the connection with water meter <strong>{connection.meterSerial}</strong></> : <>this connection</>;
   const title = installing ? 'Mark as Active' : disconnecting ? 'Disconnect' : 'Reconnect';
 
   return (
@@ -518,17 +513,17 @@ function ConnectionStatusDialog({
       <p className="text-lg">
         {installing && (
           <>
-            Connection <strong>{connection.connectionNumber}</strong> has been installed and is now active?
+            Has {which} been installed, and is it now active?
           </>
         )}
         {disconnecting && (
           <>
-            Disconnect connection <strong>{connection.connectionNumber}</strong>?
+            Disconnect {which}?
           </>
         )}
         {connection.status === 'DISCONNECTED' && (
           <>
-            Reconnect connection <strong>{connection.connectionNumber}</strong> and make it active again?
+            Reconnect {which} and make it active again?
           </>
         )}
       </p>

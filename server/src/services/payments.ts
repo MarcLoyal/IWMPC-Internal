@@ -144,7 +144,7 @@ export async function getOwed(accountId: number): Promise<OwedItem[]> {
   for (const c of unpaidInstallations) {
     owed.push({
       type: 'INSTALLATION_FEE',
-      label: `Installation Fee for connection ${c.connectionNumber}`,
+      label: c.meterSerial ? `Installation Fee (water meter ${c.meterSerial})` : 'Installation Fee',
       amount: new Prisma.Decimal(settings.installation_fee).toFixed(2),
     });
   }

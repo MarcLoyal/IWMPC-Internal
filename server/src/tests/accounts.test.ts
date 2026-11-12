@@ -101,30 +101,39 @@ describe('creating and editing accounts', () => {
     expect(log.userId).toBeTruthy();
   });
 
-  it('blocks a connection number that is already used', async () => {
+  it('adds a connection from the water application form, without asking for a connection number', async () => {
     const staff = await loginAs('STAFF');
     const juan = await makeAccount('Juan Dela Cruz');
     const maria = await makeAccount('Maria Santos');
     const first = await staff
       .post(`/api/accounts/${juan.id}/connections`)
-      .send({ connectionNumber: 'WM-1', applicationDate: '2026-11-01', meterSerial: 'SN-778812', remarks: 'Near the gate' });
+      .send({ applicationDate: '2026-11-01', meterSerial: 'SN-778812', remarks: 'Near the gate' });
     expect(first.status).toBe(201);
-    // From the water application form. The name on the meter defaults to the applicant.
+    // The name on the meter defaults to the applicant.
     expect(first.body).toMatchObject({
       applicationDate: '2026-11-01',
       meterSerial: 'SN-778812',
       meterName: 'Juan Dela Cruz',
       remarks: 'Near the gate',
+      status: 'PENDING_INSTALLATION',
     });
-    const dup = await staff.post(`/api/accounts/${maria.id}/connections`).send({ connectionNumber: 'WM-1' });
+
+    // The same meter cannot be put on two connections.
+    const dup = await staff.post(`/api/accounts/${maria.id}/connections`).send({ meterSerial: 'sn-778812' });
     expect(dup.status).toBe(409);
     expect(dup.body.error).toContain('Juan Dela Cruz');
+
+    // The serial number can be left blank (meter not yet assigned), any number of times.
+    expect((await staff.post(`/api/accounts/${maria.id}/connections`).send({})).status).toBe(201);
+    expect((await staff.post(`/api/accounts/${maria.id}/connections`).send({})).status).toBe(201);
+    const numbers = (await prisma.waterConnection.findMany()).map((c) => c.connectionNumber);
+    expect(new Set(numbers).size).toBe(3);
   });
 
   it('moves a connection Pending -> Active -> Disconnected, and not straight to Disconnected', async () => {
     const staff = await loginAs('STAFF');
     const juan = await makeAccount('Juan Dela Cruz');
-    const created = await staff.post(`/api/accounts/${juan.id}/connections`).send({ connectionNumber: 'WM-1' });
+    const created = await staff.post(`/api/accounts/${juan.id}/connections`).send({ meterSerial: 'SN-1' });
     expect(created.body.status).toBe('PENDING_INSTALLATION');
     const id = created.body.id;
 
@@ -162,7 +171,7 @@ describe('roles', () => {
       board.post('/api/accounts').send({ firstName: 'X', lastName: 'Y', areaId: 1 }),
       board.put(`/api/accounts/${juan.id}`).send({ firstName: 'X', lastName: 'Y', areaId: 1 }),
       board.post(`/api/accounts/${juan.id}/make-member`).send(membershipForm('Juan Dela Cruz')),
-      board.post(`/api/accounts/${juan.id}/connections`).send({ connectionNumber: 'Z' }),
+      board.post(`/api/accounts/${juan.id}/connections`).send({ meterSerial: 'Z' }),
       board.post('/api/payments').send({ accountId: juan.id, type: 'OTHER', amount: '1', orNumber: '1', description: 'x' }),
       board.put('/api/settings').send({ membership_fee: '1' }),
       board.get('/api/users'),
