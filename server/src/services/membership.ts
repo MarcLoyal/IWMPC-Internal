@@ -23,12 +23,26 @@ export interface BeneficiaryInput {
   relationship: string;
 }
 
+/** The account columns filled in from the Application for Membership form. */
+export type MembershipDetails = Pick<
+  Prisma.AccountUncheckedUpdateInput,
+  | 'membershipAppliedOn'
+  | 'membershipPurpose'
+  | 'sharesSubscribed'
+  | 'sharesAmount'
+  | 'meterRegisteredName'
+  | 'pmesAttended'
+  | 'boardDecision'
+  | 'boardDecisionDate'
+>;
+
 /** Step 1: staff click "Make a Member". The account waits for the membership fee. */
 export async function startMembership(
   tx: Prisma.TransactionClient,
   accountId: number,
   beneficiaries: BeneficiaryInput[],
   userId: number,
+  details: MembershipDetails = {},
 ) {
   const account = await tx.account.findUnique({ where: { id: accountId } });
   if (!account) throw notFound('This account');
@@ -39,9 +53,10 @@ export async function startMembership(
   if (beneficiaries.length) {
     await tx.beneficiary.createMany({ data: beneficiaries.map((b) => ({ ...b, accountId })) });
   }
-  const updated = await tx.account.update({ where: { id: accountId }, data: { membershipStatus: 'PENDING' } });
+  const updated = await tx.account.update({ where: { id: accountId }, data: { ...details, membershipStatus: 'PENDING' } });
   await audit(tx, userId, 'membership.start', 'account', accountId, { membershipStatus: account.membershipStatus }, {
     membershipStatus: 'PENDING',
+    ...details,
     beneficiaries,
   });
   return updated;

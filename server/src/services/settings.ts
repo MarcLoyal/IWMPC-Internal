@@ -3,8 +3,8 @@ import type { Db } from '../lib/prisma';
 /** Every setting, with the value used until an admin changes it. */
 export const SETTING_DEFAULTS = {
   coop_name: 'Inicbulan Waterworks Multi-purpose Cooperative',
-  coop_address: '',
-  coop_cda_no: '',
+  coop_address: 'Inicbulan, Bauan, Batangas',
+  coop_cda_no: '9520-04002341',
   membership_fee: '0.00',
   installation_fee: '0.00',
   account_no_prefix: 'A-',
@@ -32,5 +32,9 @@ export async function getSettings(db: Db): Promise<Settings> {
 export async function ensureDefaultSettings(db: Db) {
   for (const key of SETTING_KEYS) {
     await db.setting.upsert({ where: { key }, update: {}, create: { key, value: SETTING_DEFAULTS[key] } });
+  }
+  // Coop details printed on IWMPC's own forms: fill them in if they were left blank.
+  for (const key of ['coop_address', 'coop_cda_no'] as const) {
+    await db.setting.updateMany({ where: { key, value: '' }, data: { value: SETTING_DEFAULTS[key] } });
   }
 }

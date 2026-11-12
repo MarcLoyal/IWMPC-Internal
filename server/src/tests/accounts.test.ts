@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import request from 'supertest';
 import { app } from '../app';
 import { prisma } from '../lib/prisma';
-import { loginAs, makeAccount, resetDb } from './helpers';
+import { loginAs, makeAccount, membershipForm, resetDb } from './helpers';
 
 beforeEach(resetDb);
 
@@ -72,20 +72,21 @@ describe('accounts list', () => {
 describe('creating and editing accounts', () => {
   it('gives each new account the next account number', async () => {
     const staff = await loginAs('STAFF');
-    const a = await staff.post('/api/accounts').send({ fullName: 'Juan Dela Cruz', areaId: 1 });
-    const b = await staff.post('/api/accounts').send({ fullName: 'Maria Santos', areaId: 2, civilStatus: 'WIDOWED', birthDate: '1965-07-02' });
+    const a = await staff.post('/api/accounts').send({ firstName: 'Juan', lastName: 'Dela Cruz', areaId: 1 });
+    const b = await staff.post('/api/accounts').send({ firstName: 'Maria', middleName: 'Clara', lastName: 'Santos', purok: 'Purok 2', barangay: 'Inicbulan', areaId: 2, civilStatus: 'WIDOWED', birthDate: '1965-07-02' });
     expect([a.status, b.status]).toEqual([201, 201]);
     expect([a.body.accountNumber, b.body.accountNumber]).toEqual(['A-0001', 'A-0002']);
 
     const profile = await staff.get(`/api/accounts/${b.body.id}`);
-    expect(profile.body.account).toMatchObject({ civilStatus: 'WIDOWED', birthDate: '1965-07-02', area: 'Ipil', isMember: false });
+    expect(profile.body.account).toMatchObject({ fullName: 'Maria Clara Santos', address: 'Purok 2, Inicbulan', civilStatus: 'WIDOWED', birthDate: '1965-07-02', area: 'Ipil', isMember: false });
   });
 
   it('gives plain messages for missing details', async () => {
     const staff = await loginAs('STAFF');
-    expect((await staff.post('/api/accounts').send({ fullName: ' ', areaId: 1 })).body.error).toBe('Please type the full name.');
-    expect((await staff.post('/api/accounts').send({ fullName: 'Juan', areaId: 99 })).body.error).toBe('Please choose an area.');
-    expect((await staff.post('/api/accounts').send({ fullName: 'Juan', areaId: 1, birthDate: '2026-02-30' })).body.error).toBe(
+    expect((await staff.post('/api/accounts').send({ firstName: 'Juan', lastName: ' ', areaId: 1 })).body.error).toBe('Please type the family name.');
+    expect((await staff.post('/api/accounts').send({ lastName: 'Cruz', areaId: 1 })).body.error).toBe('Please type the given name.');
+    expect((await staff.post('/api/accounts').send({ firstName: 'Juan', lastName: 'Cruz', areaId: 99 })).body.error).toBe('Please choose an area.');
+    expect((await staff.post('/api/accounts').send({ firstName: 'Juan', lastName: 'Cruz', areaId: 1, birthDate: '2026-02-30' })).body.error).toBe(
       'Please enter a valid date.',
     );
   });
@@ -93,7 +94,7 @@ describe('creating and editing accounts', () => {
   it('records edits in the audit trail with before and after', async () => {
     const staff = await loginAs('STAFF');
     const juan = await makeAccount('Juan Dela Cruz');
-    await staff.put(`/api/accounts/${juan.id}`).send({ fullName: 'Juan D. Cruz', areaId: 2, phone: '0917 555 0101' });
+    await staff.put(`/api/accounts/${juan.id}`).send({ firstName: 'Juan', middleName: 'D.', lastName: 'Cruz', areaId: 2, phone: '0917 555 0101' });
     const log = await prisma.auditLog.findFirstOrThrow({ where: { action: 'account.update' } });
     expect((log.before as { fullName: string }).fullName).toBe('Juan Dela Cruz');
     expect((log.after as { fullName: string }).fullName).toBe('Juan D. Cruz');
@@ -104,7 +105,17 @@ describe('creating and editing accounts', () => {
     const staff = await loginAs('STAFF');
     const juan = await makeAccount('Juan Dela Cruz');
     const maria = await makeAccount('Maria Santos');
-    expect((await staff.post(`/api/accounts/${juan.id}/connections`).send({ connectionNumber: 'WM-1' })).status).toBe(201);
+    const first = await staff
+      .post(`/api/accounts/${juan.id}/connections`)
+      .send({ connectionNumber: 'WM-1', applicationDate: '2026-11-01', meterSerial: 'SN-778812', remarks: 'Near the gate' });
+    expect(first.status).toBe(201);
+    // From the water application form. The name on the meter defaults to the applicant.
+    expect(first.body).toMatchObject({
+      applicationDate: '2026-11-01',
+      meterSerial: 'SN-778812',
+      meterName: 'Juan Dela Cruz',
+      remarks: 'Near the gate',
+    });
     const dup = await staff.post(`/api/accounts/${maria.id}/connections`).send({ connectionNumber: 'WM-1' });
     expect(dup.status).toBe(409);
     expect(dup.body.error).toContain('Juan Dela Cruz');
@@ -148,9 +159,9 @@ describe('roles', () => {
     expect((await board.get('/api/reports/daily')).status).toBe(200);
 
     const attempts = [
-      board.post('/api/accounts').send({ fullName: 'X', areaId: 1 }),
-      board.put(`/api/accounts/${juan.id}`).send({ fullName: 'X', areaId: 1 }),
-      board.post(`/api/accounts/${juan.id}/make-member`).send({}),
+      board.post('/api/accounts').send({ firstName: 'X', lastName: 'Y', areaId: 1 }),
+      board.put(`/api/accounts/${juan.id}`).send({ firstName: 'X', lastName: 'Y', areaId: 1 }),
+      board.post(`/api/accounts/${juan.id}/make-member`).send(membershipForm('Juan Dela Cruz')),
       board.post(`/api/accounts/${juan.id}/connections`).send({ connectionNumber: 'Z' }),
       board.post('/api/payments').send({ accountId: juan.id, type: 'OTHER', amount: '1', orNumber: '1', description: 'x' }),
       board.put('/api/settings').send({ membership_fee: '1' }),
@@ -165,7 +176,7 @@ describe('roles', () => {
     const juan = await makeAccount('Juan Dela Cruz');
     const payment = { accountId: juan.id, type: 'OTHER', amount: '1', orNumber: '1', description: 'x' };
 
-    expect((await cashier.post('/api/accounts').send({ fullName: 'X', areaId: 1 })).status).toBe(403);
+    expect((await cashier.post('/api/accounts').send({ firstName: 'X', lastName: 'Y', areaId: 1 })).status).toBe(403);
     expect((await cashier.put('/api/settings').send({ membership_fee: '1' })).status).toBe(403);
     expect((await staff.post('/api/payments').send(payment)).status).toBe(403);
     expect((await staff.post('/api/users').send({})).status).toBe(403);

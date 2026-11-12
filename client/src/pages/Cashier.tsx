@@ -7,7 +7,7 @@ import type { AccountList, AccountProfile, AccountRow, Payment, PaymentType, Set
 import { useDebounced, useLoad } from '../lib/useLoad';
 import { Button, Card, Detail, Field, LinkButton, Loading, MemberBadge, Modal, Notice, PageHeader } from '../components/ui';
 
-const TYPES: PaymentType[] = ['INSTALLATION_FEE', 'MEMBERSHIP_FEE', 'OTHER'];
+const TYPES: PaymentType[] = ['INSTALLATION_FEE', 'MEMBERSHIP_FEE', 'SHARE_CAPITAL', 'OTHER'];
 const AMOUNT = /^\d{1,9}(\.\d{1,2})?$/;
 
 function StepTitle({ n, children }: { n: number; children: React.ReactNode }) {
@@ -221,14 +221,14 @@ export function Cashier() {
             <Card className="p-6">
               <StepTitle n={3}>Payment</StepTitle>
               <div className="label">Payment type</div>
-              <div className="grid gap-2 sm:grid-cols-3">
+              <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
                 {TYPES.map((t) => (
                   <button
                     key={t}
                     type="button"
                     aria-pressed={type === t}
                     onClick={() => pickType(t)}
-                    className={`rounded-lg border-2 px-4 py-3 text-lg font-semibold ${
+                    className={`rounded-lg border-2 px-3 py-3 text-lg font-semibold ${
                       type === t ? 'border-brand-700 bg-brand-50 text-brand-800' : 'border-slate-300 bg-white hover:border-slate-400'
                     }`}
                   >

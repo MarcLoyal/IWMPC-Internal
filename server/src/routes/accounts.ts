@@ -4,11 +4,12 @@ import { z } from 'zod';
 import { prisma } from '../lib/prisma';
 import { AppError, notFound } from '../lib/errors';
 import { isDateString, toDbDate, todayManila } from '../lib/dates';
+import { parseMoney } from '../lib/money';
 import { idParam } from '../lib/params';
 import { accountDetail, accountRow, connectionJson, paymentJson } from '../lib/serialize';
 import { allow, wrap } from '../middleware/auth';
 import { audit } from '../services/audit';
-import { startMembership } from '../services/membership';
+import { NO_ACTIVE_CONNECTION, startMembership, type MembershipDetails } from '../services/membership';
 import { nextNumber } from '../services/numbering';
 import { getOwed } from '../services/payments';
 
@@ -24,16 +25,42 @@ const optionalDate = z
   .nullable()
   .optional();
 
+const text = (max: number) => z.string().trim().max(max).default('');
+
+/** Personal details, as written on IWMPC's paper forms. */
 const accountSchema = z.object({
-  fullName: z.string({ required_error: 'Please type the full name.' }).trim().min(1, 'Please type the full name.').max(150),
+  lastName: z.string({ required_error: 'Please type the family name.' }).trim().min(1, 'Please type the family name.').max(60),
+  firstName: z.string({ required_error: 'Please type the given name.' }).trim().min(1, 'Please type the given name.').max(60),
+  middleName: text(60),
   areaId: z.coerce.number({ invalid_type_error: 'Please choose an area.' }).int().positive('Please choose an area.'),
-  address: z.string().trim().max(250).default(''),
-  phone: z.string().trim().max(50).default(''),
+  purok: text(80),
+  barangay: text(80),
+  municipality: text(80),
+  province: text(80),
+  phone: text(50),
   birthDate: optionalDate,
   civilStatus: z.enum(['SINGLE', 'MARRIED', 'WIDOWED', 'SEPARATED']).nullable().optional(),
-  idType: z.string().trim().max(80).default(''),
-  idNumber: z.string().trim().max(80).default(''),
+  sex: z.enum(['MALE', 'FEMALE']).nullable().optional(),
+  tin: text(30),
+  religion: text(80),
+  education: text(120),
+  idType: text(80),
+  idNumber: text(80),
 });
+
+type AccountInput = z.infer<typeof accountSchema>;
+
+/** Turns the form into database columns, including the combined name and address. */
+function accountColumns(data: AccountInput) {
+  return {
+    ...data,
+    fullName: [data.firstName, data.middleName, data.lastName].filter(Boolean).join(' '),
+    address: [data.purok, data.barangay, data.municipality, data.province].filter(Boolean).join(', '),
+    birthDate: data.birthDate ? toDbDate(data.birthDate) : null,
+    civilStatus: data.civilStatus ?? null,
+    sex: data.sex ?? null,
+  };
+}
 
 const beneficiariesSchema = z
   .array(
@@ -44,6 +71,55 @@ const beneficiariesSchema = z
   )
   .max(10)
   .default([]);
+
+const optionalMoney = z
+  .union([z.string(), z.number(), z.null()])
+  .optional()
+  .transform((v, ctx) => {
+    if (v === null || v === undefined || String(v).trim() === '') return null;
+    const parsed = parseMoney(String(v));
+    if (!parsed) {
+      ctx.addIssue({ code: 'custom', message: 'Please enter a valid amount for the share capital.' });
+      return z.NEVER;
+    }
+    return parsed;
+  });
+
+/** The rest of the Application for Membership form. */
+const membershipSchema = z.object({
+  membershipAppliedOn: optionalDate,
+  membershipPurpose: text(250),
+  sharesSubscribed: z
+    .union([z.string(), z.number(), z.null()])
+    .optional()
+    .transform((v, ctx) => {
+      if (v === null || v === undefined || String(v).trim() === '') return null;
+      const n = Number(v);
+      if (!Number.isInteger(n) || n < 0 || n > 1_000_000) {
+        ctx.addIssue({ code: 'custom', message: 'Please enter a whole number for the number of shares.' });
+        return z.NEVER;
+      }
+      return n;
+    }),
+  sharesAmount: optionalMoney,
+  meterRegisteredName: text(150),
+  pmesAttended: z.boolean().nullable().optional(),
+  boardDecision: z.enum(['APPROVED', 'DISAPPROVED']).nullable().optional(),
+  boardDecisionDate: optionalDate,
+});
+
+function membershipColumns(data: z.infer<typeof membershipSchema>): MembershipDetails {
+  return {
+    membershipAppliedOn: data.membershipAppliedOn ? toDbDate(data.membershipAppliedOn) : null,
+    membershipPurpose: data.membershipPurpose,
+    sharesSubscribed: data.sharesSubscribed,
+    sharesAmount: data.sharesAmount,
+    meterRegisteredName: data.meterRegisteredName,
+    pmesAttended: data.pmesAttended ?? null,
+    boardDecision: data.boardDecision ?? null,
+    boardDecisionDate: data.boardDecision && data.boardDecisionDate ? toDbDate(data.boardDecisionDate) : null,
+  };
+}
 
 /** Every word typed must appear in the name, account number, or member number. */
 function searchFilter(search: string): Prisma.AccountWhereInput {
@@ -112,9 +188,7 @@ accountsRouter.post(
       const accountNumber = await nextNumber(tx, 'account');
       const created = await tx.account.create({
         data: {
-          ...data,
-          birthDate: data.birthDate ? toDbDate(data.birthDate) : null,
-          civilStatus: data.civilStatus ?? null,
+          ...accountColumns(data),
           accountNumber,
           createdById: req.user!.id,
         },
@@ -170,24 +244,21 @@ accountsRouter.put(
   allow('ADMIN', 'STAFF'),
   wrap(async (req, res) => {
     const id = idParam(req.params.id, 'This account');
-    // Only personal details can be edited here. Membership changes go through Make a Member.
     const data = accountSchema.parse(req.body);
-    const beneficiaries = req.body.beneficiaries === undefined ? null : beneficiariesSchema.parse(req.body.beneficiaries);
     const before = await prisma.account.findUnique({ where: { id }, include: { beneficiaries: true } });
     if (!before) throw notFound('This account');
     if (!(await prisma.area.findUnique({ where: { id: data.areaId } }))) {
       throw new AppError(400, 'Please choose an area.');
     }
+    // Membership details can be edited only after "Make a Member". Whether the account
+    // IS a member is never changed here.
+    const applied = before.membershipStatus !== 'NONE';
+    const membership = applied ? membershipColumns(membershipSchema.parse(req.body)) : {};
+    const beneficiaries = applied && req.body.beneficiaries !== undefined ? beneficiariesSchema.parse(req.body.beneficiaries) : null;
+
     await prisma.$transaction(async (tx) => {
-      const after = await tx.account.update({
-        where: { id },
-        data: {
-          ...data,
-          birthDate: data.birthDate ? toDbDate(data.birthDate) : null,
-          civilStatus: data.civilStatus ?? null,
-        },
-      });
-      if (beneficiaries && before.membershipStatus !== 'NONE') {
+      const after = await tx.account.update({ where: { id }, data: { ...accountColumns(data), ...membership } });
+      if (beneficiaries) {
         await tx.beneficiary.deleteMany({ where: { accountId: id } });
         if (beneficiaries.length) {
           await tx.beneficiary.createMany({ data: beneficiaries.map((b) => ({ ...b, accountId: id })) });
@@ -199,13 +270,38 @@ accountsRouter.put(
   }),
 );
 
+// "Make a Member": saves the whole Application for Membership form, then waits for the fee.
 accountsRouter.post(
   '/:id/make-member',
   allow('ADMIN', 'STAFF'),
   wrap(async (req, res) => {
     const id = idParam(req.params.id, 'This account');
+    const account = await prisma.account.findUnique({ where: { id } });
+    if (!account) throw notFound('This account');
+    if (account.isMember) throw new AppError(400, 'This account is already a member.');
+    if (account.membershipStatus === 'PENDING') {
+      throw new AppError(400, 'This account is already waiting for the membership fee.');
+    }
+    if ((await prisma.waterConnection.count({ where: { accountId: id, status: 'ACTIVE' } })) === 0) {
+      throw new AppError(400, NO_ACTIVE_CONNECTION);
+    }
+
+    const personal = accountSchema.parse(req.body);
+    const membership = membershipSchema.parse(req.body);
     const beneficiaries = beneficiariesSchema.parse(req.body?.beneficiaries);
-    await prisma.$transaction((tx) => startMembership(tx, id, beneficiaries, req.user!.id));
+    if (!(await prisma.area.findUnique({ where: { id: personal.areaId } }))) {
+      throw new AppError(400, 'Please choose an area.');
+    }
+    // Needed on the membership form.
+    if (!personal.birthDate) throw new AppError(400, 'Please enter the birthday.');
+    if (!personal.sex) throw new AppError(400, 'Please choose the sex.');
+    if (!personal.civilStatus) throw new AppError(400, 'Please choose the civil status.');
+    if (!membership.membershipAppliedOn) membership.membershipAppliedOn = todayManila();
+
+    await prisma.$transaction(async (tx) => {
+      await tx.account.update({ where: { id }, data: accountColumns(personal) });
+      await startMembership(tx, id, beneficiaries, req.user!.id, membershipColumns(membership));
+    });
     res.json({ ok: true });
   }),
 );
@@ -216,7 +312,11 @@ const connectionSchema = z.object({
     .trim()
     .min(1, 'Please type the connection or meter number.')
     .max(50),
+  applicationDate: optionalDate,
+  meterName: z.string().trim().max(150).default(''),
+  meterSerial: z.string().trim().max(60).default(''),
   address: z.string().trim().max(250).default(''),
+  remarks: z.string().trim().max(500).default(''),
 });
 
 accountsRouter.post(
@@ -239,7 +339,15 @@ accountsRouter.post(
     }
     const connection = await prisma.$transaction(async (tx) => {
       const created = await tx.waterConnection.create({
-        data: { accountId: id, connectionNumber: data.connectionNumber, address: data.address || account.address },
+        data: {
+          accountId: id,
+          connectionNumber: data.connectionNumber,
+          applicationDate: toDbDate(data.applicationDate ?? todayManila()),
+          meterName: data.meterName || account.fullName,
+          meterSerial: data.meterSerial,
+          address: data.address || account.address,
+          remarks: data.remarks,
+        },
       });
       await audit(tx, req.user!.id, 'connection.create', 'connection', created.id, null, created);
       return created;

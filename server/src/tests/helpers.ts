@@ -39,7 +39,7 @@ let meter = 0;
 export async function makeAccount(fullName: string, connection?: ConnectionStatus) {
   const count = await prisma.account.count();
   const account = await prisma.account.create({
-    data: { fullName, areaId: 1, accountNumber: `T-${String(count + 1).padStart(4, '0')}` },
+    data: { fullName, ...nameParts(fullName), areaId: 1, accountNumber: `T-${String(count + 1).padStart(4, '0')}` },
   });
   if (connection) {
     await prisma.waterConnection.create({
@@ -47,4 +47,22 @@ export async function makeAccount(fullName: string, connection?: ConnectionStatu
     });
   }
   return account;
+}
+
+function nameParts(fullName: string) {
+  const words = fullName.trim().split(/\s+/);
+  const lastName = words.length > 1 ? words.pop()! : words[0];
+  return { firstName: words.length ? words.join(' ') : lastName, lastName };
+}
+
+/** A filled-in Application for Membership, as the Make a Member screen sends it. */
+export function membershipForm(fullName: string, extra: Record<string, unknown> = {}) {
+  return {
+    ...nameParts(fullName),
+    areaId: 1,
+    birthDate: '1960-01-15',
+    sex: 'MALE',
+    civilStatus: 'MARRIED',
+    ...extra,
+  };
 }

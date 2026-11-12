@@ -19,7 +19,7 @@ const people = {
 
 const paymentSchema = z.object({
   accountId: z.coerce.number({ invalid_type_error: 'Please pick an account.' }).int().positive('Please pick an account.'),
-  type: z.enum(['INSTALLATION_FEE', 'MEMBERSHIP_FEE', 'OTHER'], {
+  type: z.enum(['INSTALLATION_FEE', 'MEMBERSHIP_FEE', 'SHARE_CAPITAL', 'OTHER'], {
     errorMap: () => ({ message: 'Please pick the payment type.' }),
   }),
   amount: z.union([z.string(), z.number()], { errorMap: () => ({ message: 'Please enter the amount.' }) }).transform(String),

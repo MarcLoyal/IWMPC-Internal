@@ -43,6 +43,7 @@ export function App() {
         <Route path="accounts/new" element={<Only roles={['ADMIN', 'STAFF']}><AccountForm /></Only>} />
         <Route path="accounts/:id" element={<AccountProfile />} />
         <Route path="accounts/:id/edit" element={<Only roles={['ADMIN', 'STAFF']}><AccountForm /></Only>} />
+        <Route path="accounts/:id/make-member" element={<Only roles={['ADMIN', 'STAFF']}><AccountForm makeMember /></Only>} />
         <Route path="cashier" element={<Cashier />} />
         <Route path="cashier/find" element={<FindPayment />} />
         <Route path="cashier/daily-report" element={<DailyReport />} />

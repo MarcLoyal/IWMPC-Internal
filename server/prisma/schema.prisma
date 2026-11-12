@@ -44,7 +44,18 @@ enum ConnectionStatus {
 enum PaymentType {
   INSTALLATION_FEE
   MEMBERSHIP_FEE
+  SHARE_CAPITAL
   OTHER
+}
+
+enum Sex {
+  MALE
+  FEMALE
+}
+
+enum BoardDecision {
+  APPROVED
+  DISAPPROVED
 }
 
 enum PaymentStatus {
@@ -82,7 +93,16 @@ model Account {
   accountNumber String  @unique @map("account_number")
   // Kept even if the person stops being a member, so the number is never reused.
   memberNumber  String? @unique @map("member_number")
+  // Name as written on IWMPC's forms. full_name is built from these and used for search and display.
+  lastName      String  @default("") @map("last_name")
+  firstName     String  @default("") @map("first_name")
+  middleName    String  @default("") @map("middle_name")
   fullName      String  @map("full_name")
+  // Address as written on IWMPC's forms. address is built from these.
+  purok         String  @default("")
+  barangay      String  @default("")
+  municipality  String  @default("")
+  province      String  @default("")
   address       String  @default("")
   areaId        Int     @map("area_id")
   phone         String  @default("")
@@ -90,6 +110,20 @@ model Account {
   civilStatus   CivilStatus? @map("civil_status")
   idType        String  @default("") @map("id_type")
   idNumber      String  @default("") @map("id_number")
+  tin           String  @default("")
+  sex           Sex?
+  religion      String  @default("")
+  education     String  @default("")
+
+  // From the Application for Membership form. Filled in by "Make a Member".
+  membershipAppliedOn DateTime?      @map("membership_applied_on") @db.Date
+  membershipPurpose   String         @default("") @map("membership_purpose")
+  sharesSubscribed    Int?           @map("shares_subscribed")
+  sharesAmount        Decimal?       @map("shares_amount") @db.Decimal(12, 2)
+  meterRegisteredName String         @default("") @map("meter_registered_name")
+  pmesAttended        Boolean?       @map("pmes_attended")
+  boardDecision       BoardDecision? @map("board_decision")
+  boardDecisionDate   DateTime?      @map("board_decision_date") @db.Date
 
   // Changed only by the membership service (Make a Member + membership fee payment).
   isMember         Boolean          @default(false) @map("is_member")
@@ -126,6 +160,11 @@ model WaterConnection {
   id               Int              @id @default(autoincrement())
   accountId        Int              @map("account_id")
   connectionNumber String           @unique @map("connection_number")
+  // From the water connection application (Form No. 2-A).
+  applicationDate  DateTime?        @map("application_date") @db.Date
+  meterName        String           @default("") @map("meter_name")
+  meterSerial      String           @default("") @map("meter_serial")
+  remarks          String           @default("")
   address          String           @default("")
   rateClass        String           @default("Residential") @map("rate_class")
   installationDate DateTime?        @map("installation_date") @db.Date

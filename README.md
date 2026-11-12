@@ -18,11 +18,13 @@ water billing and loans.
   with Personal Info, Water (connections) and All Transactions tabs, Print.
 - **Connections**: add a connection, Pending Installation → Active → Disconnected. Needed in 1A because
   Make a Member requires an active connection. Readings and bills come in 1B.
+- **Paper forms**: the account, Make a Member and Add Connection screens follow IWMPC's Application for
+  Membership and water connection application (Form No. 2-A) field for field.
 - **Make a Member**: staff click *Make a Member* (blocked without an active connection, checked on the
   server), the cashier records the membership fee in full, and the account becomes a Member with the
   next member number. Voiding that payment returns the account to Non-member; the number stays reserved.
 - **Cashier**: pick account → see what they owe → payment type (Installation Fee, Membership Fee,
-  Other) → amount → OR number → "Is this correct?" → save. Duplicate OR numbers are blocked with a
+  Share Capital, Other) → amount → OR number → "Is this correct?" → save. Duplicate OR numbers are blocked with a
   message saying who and when. Find a payment by OR number. Void is Admin only, with a reason.
 - **Daily Collection Report**: every payment of the day with OR numbers, totals per type, grand total,
   missing OR numbers flagged. Printable.

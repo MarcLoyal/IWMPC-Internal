@@ -59,6 +59,15 @@ const PEOPLE: Person[] = [
   { name: 'Josefa Llanes Escoda', area: 'Narra Extension', street: '11 Narra Ext.', phone: '0932 555 0116', birth: '1995-09-20', civil: 'SINGLE' },
 ];
 
+const FEMALE = new Set(['Maria Clara Santos', 'Lourdes Garcia', 'Rosalinda Villanueva', 'Corazon Mercado', 'Teresita Flores', 'Gloria Pascual', 'Imelda Navarro', 'Josefa Llanes Escoda']);
+const TWO_WORD_SURNAMES = ['Dela Cruz'];
+
+/** "Juan Dela Cruz" -> given name "Juan", family name "Dela Cruz". */
+function nameParts(name: string) {
+  const surname = TWO_WORD_SURNAMES.find((s) => name.endsWith(` ${s}`)) ?? name.split(' ').pop()!;
+  return { firstName: name.slice(0, -surname.length).trim(), middleName: '', lastName: surname };
+}
+
 function daysAgo(n: number): string {
   return todayManila(new Date(Date.now() - n * 86_400_000));
 }
@@ -96,7 +105,7 @@ async function seed() {
   const areas = new Map((await prisma.area.findMany()).map((a) => [a.name, a.id]));
 
   let or = 1001;
-  const pay = async (accountId: number, type: 'INSTALLATION_FEE' | 'MEMBERSHIP_FEE' | 'OTHER', amount: string, date: string, description = '') => {
+  const pay = async (accountId: number, type: 'INSTALLATION_FEE' | 'MEMBERSHIP_FEE' | 'SHARE_CAPITAL' | 'OTHER', amount: string, date: string, description = '') => {
     const payment = await recordPayment(
       { accountId, type, amount: parseMoney(amount)!, orNumber: String(or++), description },
       cashier.id,
@@ -114,7 +123,14 @@ async function seed() {
         data: {
           accountNumber: await nextNumber(tx, 'account'),
           fullName: person.name,
+          ...nameParts(person.name),
+          purok: person.street,
+          barangay: 'Inicbulan',
+          municipality: 'Bauan',
+          province: 'Batangas',
           address: `${person.street}, Inicbulan, Bauan, Batangas`,
+          sex: FEMALE.has(person.name) ? 'FEMALE' : 'MALE',
+          religion: 'Roman Catholic',
           areaId: areas.get(person.area)!,
           phone: person.phone,
           birthDate: toDbDate(person.birth),
@@ -133,6 +149,9 @@ async function seed() {
           accountId: account.id,
           connectionNumber: `WM-${String(meter).padStart(4, '0')}`,
           address: `${person.street}, Inicbulan, Bauan, Batangas`,
+          applicationDate: toDbDate(daysAgo(person.connection === 'PENDING_INSTALLATION' ? 5 : 410 + meter * 7)),
+          meterName: person.name,
+          meterSerial: `SN-${String(520100 + meter * 37)}`,
           // Members must be active when they join; a later disconnection is applied below.
           status: person.connection === 'PENDING_INSTALLATION' ? 'PENDING_INSTALLATION' : 'ACTIVE',
           installationDate: person.connection === 'PENDING_INSTALLATION' ? null : toDbDate(daysAgo(400 + meter * 7)),
@@ -147,7 +166,19 @@ async function seed() {
   for (const { id, person } of created) {
     if (!person.membership) continue;
     const beneficiaries = person.beneficiary ? [{ name: person.beneficiary[0], relationship: person.beneficiary[1] }] : [];
-    await prisma.$transaction((tx) => startMembership(tx, id, beneficiaries, staff.id));
+    const applied = daysAgo(person.membership === 'member' ? day + 3 : 2);
+    await prisma.$transaction((tx) =>
+      startMembership(tx, id, beneficiaries, staff.id, {
+        membershipAppliedOn: toDbDate(applied),
+        membershipPurpose: 'To avail of the services of the cooperative',
+        sharesSubscribed: 10,
+        sharesAmount: parseMoney('1000.00'),
+        meterRegisteredName: person.name,
+        pmesAttended: true,
+        boardDecision: person.membership === 'member' ? 'APPROVED' : null,
+        boardDecisionDate: person.membership === 'member' ? toDbDate(applied) : null,
+      }),
+    );
     if (person.membership === 'member') {
       const date = daysAgo(day);
       await pay(id, 'MEMBERSHIP_FEE', '500.00', date);
@@ -165,6 +196,7 @@ async function seed() {
   const byName = (name: string) => created.find((c) => c.person.name === name)!.id;
   await pay(byName('Imelda Navarro'), 'INSTALLATION_FEE', '3500.00', daysAgo(3));
   await pay(byName('Teresita Flores'), 'OTHER', '150.00', daysAgo(1), 'Certification fee');
+  await pay(byName('Maria Clara Santos'), 'SHARE_CAPITAL', '1000.00', daysAgo(1));
   await pay(byName('Juan Dela Cruz'), 'OTHER', '50.00', daysAgo(0), 'Photocopy of records');
   const mistake = await pay(byName('Gloria Pascual'), 'OTHER', '1000.00', daysAgo(0), 'Meter relocation');
   or++; // OR skipped on purpose so the Daily Collection Report shows a gap

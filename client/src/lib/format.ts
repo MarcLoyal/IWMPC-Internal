@@ -45,6 +45,7 @@ export function formatLongDate(value: string): string {
 export const PAYMENT_TYPE: Record<PaymentType, string> = {
   INSTALLATION_FEE: 'Installation Fee',
   MEMBERSHIP_FEE: 'Membership Fee',
+  SHARE_CAPITAL: 'Share Capital',
   OTHER: 'Other',
 };
 
@@ -53,6 +54,18 @@ export const CONNECTION_STATUS: Record<ConnectionStatus, string> = {
   ACTIVE: 'Active',
   DISCONNECTED: 'Disconnected',
 };
+
+export const SEX = { MALE: 'Male', FEMALE: 'Female' } as const;
+
+/** Age in full years from a YYYY-MM-DD birthday. */
+export function ageFrom(birthDate: string | null | undefined): number | null {
+  if (!birthDate || !/^\d{4}-\d{2}-\d{2}$/.test(birthDate)) return null;
+  const [y, m, d] = birthDate.split('-').map(Number);
+  const now = new Date();
+  let age = now.getFullYear() - y;
+  if (now.getMonth() + 1 < m || (now.getMonth() + 1 === m && now.getDate() < d)) age -= 1;
+  return age >= 0 && age < 130 ? age : null;
+}
 
 export const CIVIL_STATUS: Record<CivilStatus, string> = {
   SINGLE: 'Single',

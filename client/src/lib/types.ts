@@ -1,5 +1,7 @@
 export type Role = 'ADMIN' | 'CASHIER' | 'STAFF' | 'BOARD';
-export type PaymentType = 'INSTALLATION_FEE' | 'MEMBERSHIP_FEE' | 'OTHER';
+export type PaymentType = 'INSTALLATION_FEE' | 'MEMBERSHIP_FEE' | 'SHARE_CAPITAL' | 'OTHER';
+export type Sex = 'MALE' | 'FEMALE';
+export type BoardDecision = 'APPROVED' | 'DISAPPROVED';
 export type ConnectionStatus = 'PENDING_INSTALLATION' | 'ACTIVE' | 'DISCONNECTED';
 export type CivilStatus = 'SINGLE' | 'MARRIED' | 'WIDOWED' | 'SEPARATED';
 
@@ -34,6 +36,25 @@ export interface Beneficiary {
 }
 
 export interface AccountDetail extends AccountRow {
+  lastName: string;
+  firstName: string;
+  middleName: string;
+  purok: string;
+  barangay: string;
+  municipality: string;
+  province: string;
+  tin: string;
+  sex: Sex | null;
+  religion: string;
+  education: string;
+  membershipAppliedOn: string | null;
+  membershipPurpose: string;
+  sharesSubscribed: number | null;
+  sharesAmount: string | null;
+  meterRegisteredName: string;
+  pmesAttended: boolean | null;
+  boardDecision: BoardDecision | null;
+  boardDecisionDate: string | null;
   address: string;
   phone: string;
   birthDate: string | null;
@@ -48,6 +69,10 @@ export interface AccountDetail extends AccountRow {
 export interface Connection {
   id: number;
   connectionNumber: string;
+  applicationDate: string | null;
+  meterName: string;
+  meterSerial: string;
+  remarks: string;
   address: string;
   rateClass: string;
   installationDate: string | null;

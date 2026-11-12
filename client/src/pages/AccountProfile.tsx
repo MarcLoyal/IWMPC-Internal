@@ -2,14 +2,16 @@ import { useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { api, errorMessage } from '../lib/api';
 import { useAuth } from '../lib/auth';
-import { CIVIL_STATUS, CONNECTION_STATUS, PAYMENT_TYPE, formatDate, peso } from '../lib/format';
-import type { AccountProfile as Profile, Beneficiary, Connection, Payment, PaymentType, Settings } from '../lib/types';
+import { CIVIL_STATUS, CONNECTION_STATUS, PAYMENT_TYPE, SEX, ageFrom, formatDate, peso } from '../lib/format';
+import type { AccountProfile as Profile, Connection, Payment, PaymentType, Settings } from '../lib/types';
 import { useLoad } from '../lib/useLoad';
-import { BeneficiaryEditor, cleanBeneficiaries } from '../components/BeneficiaryEditor';
 import { PaymentDetails, PaymentStatusBadge } from '../components/PaymentDetails';
 import { Badge, Button, Card, Detail, Field, LinkButton, Loading, MemberBadge, Modal, Notice, PageHeader, PrintButton } from '../components/ui';
 
 type Tab = 'info' | 'water' | 'transactions';
+
+const GRID = 'grid gap-x-8 gap-y-5 sm:grid-cols-2 lg:grid-cols-3 print:grid-cols-3';
+const WIDE = 'sm:col-span-2 lg:col-span-3 print:col-span-3';
 
 const CONNECTION_TONE = { PENDING_INSTALLATION: 'yellow', ACTIVE: 'green', DISCONNECTED: 'red' } as const;
 
@@ -19,7 +21,7 @@ export function AccountProfile() {
   const { data, error, loading, reload } = useLoad<Profile>(`/accounts/${id}`);
   const settings = useLoad<Settings>('/settings');
   const [tab, setTab] = useState<Tab>('info');
-  const [dialog, setDialog] = useState<null | 'member' | 'connection'>(null);
+  const [dialog, setDialog] = useState<null | 'connection'>(null);
   const [statusChange, setStatusChange] = useState<Connection | null>(null);
   const [openPayment, setOpenPayment] = useState<Payment | null>(null);
   const [typeFilter, setTypeFilter] = useState<PaymentType | ''>('');
@@ -35,6 +37,12 @@ export function AccountProfile() {
   const shownPayments = typeFilter ? payments.filter((p) => p.type === typeFilter) : payments;
   const shownTotal = shownPayments.filter((p) => p.status === 'ACTIVE').reduce((sum, p) => sum + Number(p.amount), 0);
   const pending = account.membershipStatus === 'PENDING';
+  const age = ageFrom(account.birthDate);
+  const paid = payments.filter((p) => p.status === 'ACTIVE');
+  const feePayment = paid.find((p) => p.type === 'MEMBERSHIP_FEE');
+  const capitalPayments = paid.filter((p) => p.type === 'SHARE_CAPITAL');
+  const capitalPaid = capitalPayments.reduce((sum, p) => sum + Number(p.amount), 0);
+  const capitalOrs = capitalPayments.map((p) => p.orNumber).join(', ');
 
   // On paper, every section prints; on screen, only the chosen tab shows.
   const panel = (name: Tab) => (tab === name ? 'block' : 'hidden print:block');
@@ -124,9 +132,9 @@ export function AccountProfile() {
       {canEdit && (
         <div className="no-print mb-6 flex flex-wrap gap-3">
           {data.canMakeMember && (
-            <Button variant="success" onClick={() => setDialog('member')}>
+            <LinkButton to={`/accounts/${account.id}/make-member`} variant="success">
               Make a Member
-            </Button>
+            </LinkButton>
           )}
           <Button onClick={() => setDialog('connection')}>+ Add Connection</Button>
         </div>
@@ -158,28 +166,59 @@ export function AccountProfile() {
       <section className={`${panel('info')} mb-6`}>
         <h2 className="mb-2 hidden text-lg font-bold print:block">Personal Info</h2>
         <Card className="p-6">
-          <dl className="grid gap-x-8 gap-y-5 sm:grid-cols-2 lg:grid-cols-3 print:grid-cols-3">
-            <Detail label="Full name">{account.fullName}</Detail>
-            <Detail label="Area">{account.area}</Detail>
-            <Detail label="Contact number">{account.phone}</Detail>
-            <div className="sm:col-span-2 lg:col-span-3 print:col-span-3">
+          <dl className={GRID}>
+            <Detail label="Family name">{account.lastName}</Detail>
+            <Detail label="Given name">{account.firstName}</Detail>
+            <Detail label="Middle name">{account.middleName}</Detail>
+            <div className={WIDE}>
               <Detail label="Address">{account.address}</Detail>
             </div>
-            <Detail label="Birthday">{formatDate(account.birthDate)}</Detail>
+            <Detail label="Area">{account.area}</Detail>
+            <Detail label="Contact number">{account.phone}</Detail>
+            <Detail label="TIN">{account.tin}</Detail>
+            <Detail label="Birthday">
+              {account.birthDate ? `${formatDate(account.birthDate)}${age !== null ? ` (age ${age})` : ''}` : ''}
+            </Detail>
+            <Detail label="Sex">{account.sex ? SEX[account.sex] : ''}</Detail>
             <Detail label="Civil status">{account.civilStatus ? CIVIL_STATUS[account.civilStatus] : ''}</Detail>
+            <Detail label="Religion">{account.religion}</Detail>
+            <Detail label="Highest educational attainment">{account.education}</Detail>
             <Detail label="ID">{[account.idType, account.idNumber].filter(Boolean).join(' · ')}</Detail>
             <Detail label="Date registered">{formatDate(account.dateRegistered)}</Detail>
-            {account.isMember && <Detail label="Member since">{formatDate(account.memberSince)}</Detail>}
-            {account.membershipStatus !== 'NONE' && (
-              <div className="sm:col-span-2 lg:col-span-3 print:col-span-3">
-                <Detail label="Beneficiaries">
-                  {account.beneficiaries.length
-                    ? account.beneficiaries.map((b) => (b.relationship ? `${b.name} (${b.relationship})` : b.name)).join(', ')
+          </dl>
+
+          {account.membershipStatus !== 'NONE' && (
+            <>
+              <h3 className="mb-4 mt-7 border-t border-slate-200 pt-5 text-lg font-bold">Membership</h3>
+              <dl className={GRID}>
+                <Detail label="Date of application">{formatDate(account.membershipAppliedOn)}</Detail>
+                <Detail label="Member since">{account.isMember ? formatDate(account.memberSince) : 'Not yet a member'}</Detail>
+                <Detail label="Member number">{account.memberNumber}</Detail>
+                <div className={WIDE}>
+                  <Detail label="Purpose/s for membership">{account.membershipPurpose}</Detail>
+                </div>
+                <Detail label="Subscribed share capital">
+                  {account.sharesSubscribed !== null || account.sharesAmount !== null
+                    ? `${account.sharesSubscribed ?? '—'} shares · ${account.sharesAmount !== null ? peso(account.sharesAmount) : '—'}`
                     : ''}
                 </Detail>
-              </div>
-            )}
-          </dl>
+                <Detail label="Share capital paid">{capitalPaid > 0 ? `${peso(capitalPaid)} · OR ${capitalOrs}` : 'None yet'}</Detail>
+                <Detail label="Membership fee">{feePayment ? `${peso(feePayment.amount)} · OR ${feePayment.orNumber}` : 'Not yet paid'}</Detail>
+                <div className={WIDE}>
+                  <Detail label="Beneficiaries">
+                    {account.beneficiaries.map((b) => (b.relationship ? `${b.name} (${b.relationship})` : b.name)).join(', ')}
+                  </Detail>
+                </div>
+                <Detail label="Registered name of household water meter">{account.meterRegisteredName}</Detail>
+                <Detail label="Attended PMES">{account.pmesAttended === null ? 'Not yet recorded' : account.pmesAttended ? 'Yes' : 'No'}</Detail>
+                <Detail label="Board decision">
+                  {account.boardDecision
+                    ? `${account.boardDecision === 'APPROVED' ? 'Approved' : 'Disapproved'}${account.boardDecisionDate ? ` · ${formatDate(account.boardDecisionDate)}` : ''}`
+                    : 'Not yet decided'}
+                </Detail>
+              </dl>
+            </>
+          )}
         </Card>
       </section>
 
@@ -190,11 +229,13 @@ export function AccountProfile() {
             <p className="px-6 py-10 text-center text-slate-500">This account has no water connection yet.</p>
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[640px]">
+              <table className="w-full min-w-[860px] print:min-w-0">
                 <thead className="border-b border-slate-200 bg-slate-50">
                   <tr>
                     <th className="th">Connection No.</th>
+                    <th className="th">Water Meter</th>
                     <th className="th">Address</th>
+                    <th className="th">Applied</th>
                     <th className="th">Installed</th>
                     <th className="th">Status</th>
                     {canEdit && <th className="th no-print" />}
@@ -204,8 +245,16 @@ export function AccountProfile() {
                   {connections.map((c) => (
                     <tr key={c.id}>
                       <td className="td font-semibold tabular-nums">{c.connectionNumber}</td>
-                      <td className="td">{c.address || '—'}</td>
-                      <td className="td">{formatDate(c.installationDate)}</td>
+                      <td className="td">
+                        {c.meterSerial ? <span className="tabular-nums">Serial {c.meterSerial}</span> : '—'}
+                        {c.meterName && <span className="block text-sm text-slate-500">Name: {c.meterName}</span>}
+                      </td>
+                      <td className="td">
+                        {c.address || '—'}
+                        {c.remarks && <span className="block text-sm text-slate-500">Remarks: {c.remarks}</span>}
+                      </td>
+                      <td className="td whitespace-nowrap">{formatDate(c.applicationDate)}</td>
+                      <td className="td whitespace-nowrap">{formatDate(c.installationDate)}</td>
                       <td className="td">
                         <Badge tone={CONNECTION_TONE[c.status]}>{CONNECTION_STATUS[c.status]}</Badge>
                       </td>
@@ -293,22 +342,10 @@ export function AccountProfile() {
         </Card>
       </section>
 
-      {dialog === 'member' && (
-        <MakeMemberDialog
-          accountId={account.id}
-          name={account.fullName}
-          fee={settings.data?.membership_fee ?? '0'}
-          initial={account.beneficiaries}
-          onClose={() => setDialog(null)}
-          onDone={() => {
-            setDialog(null);
-            void reload();
-          }}
-        />
-      )}
       {dialog === 'connection' && (
         <AddConnectionDialog
           accountId={account.id}
+          accountName={account.fullName}
           defaultAddress={account.address}
           onClose={() => setDialog(null)}
           onDone={() => {
@@ -343,87 +380,37 @@ export function AccountProfile() {
   );
 }
 
-function MakeMemberDialog({
-  accountId,
-  name,
-  fee,
-  initial,
-  onClose,
-  onDone,
-}: {
-  accountId: number;
-  name: string;
-  fee: string;
-  initial: Beneficiary[];
-  onClose: () => void;
-  onDone: () => void;
-}) {
-  const [beneficiaries, setBeneficiaries] = useState<Beneficiary[]>(initial.length ? initial : [{ name: '', relationship: '' }]);
-  const [error, setError] = useState('');
-  const [saving, setSaving] = useState(false);
-
-  async function save() {
-    setSaving(true);
-    setError('');
-    try {
-      await api.post(`/accounts/${accountId}/make-member`, { beneficiaries: cleanBeneficiaries(beneficiaries) });
-      onDone();
-    } catch (err) {
-      setError(errorMessage(err));
-      setSaving(false);
-    }
-  }
-
-  return (
-    <Modal
-      title="Make a Member"
-      wide
-      onClose={onClose}
-      footer={
-        <>
-          <Button onClick={onClose} disabled={saving}>
-            Cancel
-          </Button>
-          <Button variant="success" onClick={save} disabled={saving}>
-            {saving ? 'Saving…' : 'Continue'}
-          </Button>
-        </>
-      }
-    >
-      <p className="mb-4 text-lg">
-        <strong>{name}</strong> will become a Member after paying the membership fee of <strong>{peso(fee)}</strong> at the Cashier.
-      </p>
-      <BeneficiaryEditor value={beneficiaries} onChange={setBeneficiaries} />
-      {error && (
-        <Notice tone="error" className="mt-4">
-          {error}
-        </Notice>
-      )}
-    </Modal>
-  );
-}
-
+/** The water connection application (Form No. 2-A). */
 function AddConnectionDialog({
   accountId,
+  accountName,
   defaultAddress,
   onClose,
   onDone,
 }: {
   accountId: number;
+  accountName: string;
   defaultAddress: string;
   onClose: () => void;
   onDone: () => void;
 }) {
-  const [connectionNumber, setConnectionNumber] = useState('');
-  const [address, setAddress] = useState(defaultAddress);
+  const [form, setForm] = useState({
+    applicationDate: new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Manila' }),
+    connectionNumber: '',
+    meterSerial: '',
+    meterName: accountName,
+    address: defaultAddress,
+    remarks: '',
+  });
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
+  const set = (key: keyof typeof form) => (e: { target: { value: string } }) => setForm((f) => ({ ...f, [key]: e.target.value }));
 
   async function save() {
     setSaving(true);
     setError('');
     try {
-      await api.post(`/accounts/${accountId}/connections`, { connectionNumber, address });
+      await api.post(`/accounts/${accountId}/connections`, form);
       onDone();
     } catch (err) {
       setError(errorMessage(err));
@@ -434,26 +421,39 @@ function AddConnectionDialog({
   return (
     <Modal
       title="Add Connection"
+      wide
       onClose={onClose}
       footer={
         <>
           <Button onClick={onClose} disabled={saving}>
             Cancel
           </Button>
-          <Button variant="primary" onClick={save} disabled={saving || !connectionNumber.trim()}>
+          <Button variant="primary" onClick={save} disabled={saving || !form.connectionNumber.trim()}>
             {saving ? 'Saving…' : 'Save Connection'}
           </Button>
         </>
       }
     >
-      <div className="space-y-4">
-        <Field label="Connection / meter number">
-          <input className="input" value={connectionNumber} onChange={(e) => setConnectionNumber(e.target.value)} autoFocus />
+      <div className="grid gap-4 sm:grid-cols-2">
+        <Field label="Date of application">
+          <input className="input" type="date" value={form.applicationDate} onChange={set('applicationDate')} />
         </Field>
-        <Field label="Connection address">
-          <input className="input" value={address} onChange={(e) => setAddress(e.target.value)} />
+        <Field label="Connection number">
+          <input className="input" value={form.connectionNumber} onChange={set('connectionNumber')} autoFocus />
         </Field>
-        <p className="text-slate-600">
+        <Field label="Name on the water meter">
+          <input className="input" value={form.meterName} onChange={set('meterName')} />
+        </Field>
+        <Field label="Water meter serial number">
+          <input className="input" value={form.meterSerial} onChange={set('meterSerial')} />
+        </Field>
+        <Field label="Connection address" className="sm:col-span-2">
+          <input className="input" value={form.address} onChange={set('address')} />
+        </Field>
+        <Field label="Remarks (Puna)" className="sm:col-span-2">
+          <textarea className="input" rows={2} value={form.remarks} onChange={set('remarks')} />
+        </Field>
+        <p className="text-slate-600 sm:col-span-2">
           The connection starts as <strong>Pending Installation</strong>. Mark it as Active after it is installed.
         </p>
       </div>

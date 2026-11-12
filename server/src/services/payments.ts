@@ -48,6 +48,10 @@ export async function recordPayment(input: NewPayment, userId: number) {
         throw await duplicateOrError(tx, orNumber);
       }
 
+      if (input.type === 'SHARE_CAPITAL' && account.membershipStatus === 'NONE') {
+        throw new AppError(400, 'Only members can pay share capital. Open this account and click "Make a Member" first.');
+      }
+
       let connectionId: number | null = null;
       if (input.type === 'MEMBERSHIP_FEE') {
         const settings = await getSettings(tx);
