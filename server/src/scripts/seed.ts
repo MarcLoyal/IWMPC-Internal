@@ -7,7 +7,7 @@
  *   - with --preview-only (used by the Vercel build) it runs only on Vercel Preview deploys
  *   - does nothing if the database already has accounts
  */
-import 'dotenv/config';
+import '../lib/useDirectUrl';
 import bcrypt from 'bcryptjs';
 import type { ConnectionStatus, Role } from '@prisma/client';
 import { prisma } from '../lib/prisma';

@@ -3,6 +3,21 @@ import { formatPeso, parseMoney } from '../lib/money';
 import { findOrGaps, normalizeOr } from '../lib/orNumbers';
 import { isDateString, todayManila } from '../lib/dates';
 import { formatNumber } from '../services/numbering';
+import { runtimeDatabaseUrl } from '../lib/dbUrl';
+
+describe('database URL', () => {
+  it('adds pgbouncer=true for the Supabase transaction pooler', () => {
+    const pooled = 'postgresql://u:p@aws-0-ap-southeast-1.pooler.supabase.com:6543/postgres';
+    expect(runtimeDatabaseUrl(pooled)).toBe(pooled + '?pgbouncer=true');
+    expect(runtimeDatabaseUrl(pooled + '?pgbouncer=true')).toBe(pooled + '?pgbouncer=true');
+  });
+  it('leaves direct and session connections alone', () => {
+    for (const url of [
+      'postgresql://postgres:postgres@localhost:5432/iwmpc_dev',
+      'postgresql://u:p@aws-0-ap-southeast-1.pooler.supabase.com:5432/postgres',
+    ]) expect(runtimeDatabaseUrl(url)).toBe(url);
+  });
+});
 
 describe('money', () => {
   it('always shows pesos with commas and two decimals', () => {

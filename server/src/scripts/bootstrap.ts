@@ -5,7 +5,7 @@
  *   - the first Admin user (if there are no users yet and ADMIN_EMAIL / ADMIN_PASSWORD are set)
  * It never adds sample data. See seed.ts for that.
  */
-import 'dotenv/config';
+import '../lib/useDirectUrl';
 import bcrypt from 'bcryptjs';
 import { prisma } from '../lib/prisma';
 import { ensureDefaultSettings } from '../services/settings';
