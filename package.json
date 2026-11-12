@@ -1,0 +1,19 @@
+{
+  "name": "iwmpc-internal",
+  "private": true,
+  "version": "0.1.0",
+  "workspaces": ["client", "server"],
+  "scripts": {
+    "dev": "concurrently -n api,web \"npm run dev -w server\" \"npm run dev -w client\"",
+    "build": "npm run build -w client",
+    "typecheck": "npm run typecheck -w server && npm run typecheck -w client",
+    "test": "npm test -w server",
+    "db:migrate": "npm run db:migrate -w server",
+    "db:bootstrap": "npm run db:bootstrap -w server",
+    "db:seed": "npm run db:seed -w server",
+    "vercel-build": "npm run db:generate -w server && npm run db:deploy -w server && npm run db:bootstrap -w server && npm run db:seed:preview -w server && npm run build -w client"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.0"
+  }
+}
