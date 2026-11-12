@@ -42,6 +42,7 @@ export function AccountProfile() {
   return (
     <>
       <div className="mb-4 hidden text-center print:block">
+        <img src="/logo.png" alt="" className="mx-auto mb-1 h-16 w-16" />
         <div className="text-lg font-bold">{settings.data?.coop_name}</div>
         {settings.data?.coop_address && <div className="text-sm">{settings.data.coop_address}</div>}
         <div className="mt-1 text-sm font-semibold uppercase tracking-wide">Account Statement · Printed {formatDate(new Date().toISOString())}</div>

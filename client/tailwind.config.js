@@ -4,16 +4,21 @@ export default {
   theme: {
     extend: {
       colors: {
-        // One brand color, used for navigation and main buttons.
+        // Colors taken from the IWMPC logo: blue for navigation and main buttons,
+        // yellow and red as accents. (Status colors green / yellow / red are separate.)
         brand: {
-          50: '#eef6fb',
-          100: '#d8eaf5',
-          200: '#b3d5ea',
-          500: '#1f7fb5',
-          600: '#156a9c',
-          700: '#12557e',
-          800: '#113f5c',
-          900: '#0e2f45',
+          50: '#eef0ff',
+          100: '#dfe2ff',
+          200: '#c0c5ff',
+          500: '#2d32cf',
+          600: '#1616b4',
+          700: '#000099',
+          800: '#00007f',
+          900: '#000061',
+        },
+        logo: {
+          yellow: '#ffed05',
+          red: '#f70903',
         },
       },
       fontFamily: {

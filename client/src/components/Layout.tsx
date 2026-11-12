@@ -19,7 +19,7 @@ function Icon({ path }: { path: string }) {
 
 const navClass = ({ isActive }: { isActive: boolean }) =>
   `flex shrink-0 items-center gap-2 rounded-lg px-3 py-2.5 text-base font-semibold transition-colors md:gap-3 md:px-4 md:py-3 md:text-lg ${
-    isActive ? 'bg-white text-brand-800 shadow-sm' : 'text-brand-50 hover:bg-brand-700'
+    isActive ? 'bg-logo-yellow text-brand-900 shadow-sm' : 'text-white hover:bg-white/10'
   }`;
 
 export function Layout() {
@@ -27,13 +27,11 @@ export function Layout() {
 
   return (
     <div className="min-h-screen md:flex">
-      <aside className="no-print flex shrink-0 flex-col bg-brand-800 text-white md:sticky md:top-0 md:h-screen md:w-64">
+      <aside className="no-print flex shrink-0 flex-col bg-brand-700 text-white md:sticky md:top-0 md:h-screen md:w-64">
+        <div className="h-1.5 bg-logo-red" aria-hidden />
+        <div className="h-1.5 bg-logo-yellow" aria-hidden />
         <div className="flex items-center gap-3 px-5 py-5">
-          <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-white/10">
-            <svg viewBox="0 0 24 24" className="h-7 w-7" fill="currentColor" aria-hidden>
-              <path d="M12 2.500c3.500 4.300 6 7.400 6 10.700a6 6 0 0 1-12 0c0-3.300 2.500-6.400 6-10.700Z" />
-            </svg>
-          </div>
+          <img src="/logo.png" alt="IWMPC logo" className="h-12 w-12 shrink-0 rounded-full bg-white" />
           <div>
             <div className="text-xl font-bold leading-tight">IWMPC</div>
             <div className="text-xs text-brand-100">Inicbulan Waterworks MPC</div>

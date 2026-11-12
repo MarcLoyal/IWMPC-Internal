@@ -24,14 +24,13 @@ export function Login() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-brand-800 px-4 py-10">
-      <div className="w-full max-w-md rounded-2xl bg-white p-8 shadow-xl">
+    <div className="flex min-h-screen items-center justify-center bg-brand-700 px-4 py-10">
+      <div className="w-full max-w-md overflow-hidden rounded-2xl bg-white shadow-xl">
+        <div className="h-2 bg-logo-red" aria-hidden />
+        <div className="h-2 bg-logo-yellow" aria-hidden />
+        <div className="p-8">
         <div className="mb-7 text-center">
-          <div className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-2xl bg-brand-700 text-white">
-            <svg viewBox="0 0 24 24" className="h-8 w-8" fill="currentColor" aria-hidden>
-              <path d="M12 2.500c3.500 4.300 6 7.400 6 10.700a6 6 0 0 1-12 0c0-3.300 2.500-6.400 6-10.700Z" />
-            </svg>
-          </div>
+          <img src="/logo.png" alt="IWMPC logo" className="mx-auto mb-4 h-32 w-32" />
           <h1 className="text-2xl font-bold">IWMPC Internal System</h1>
           <p className="mt-1 text-slate-600">Inicbulan Waterworks Multi-purpose Cooperative</p>
         </div>
@@ -47,6 +46,7 @@ export function Login() {
             {busy ? 'Logging in…' : 'Log In'}
           </button>
         </form>
+        </div>
       </div>
     </div>
   );

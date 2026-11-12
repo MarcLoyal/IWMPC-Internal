@@ -17,6 +17,7 @@ export function DailyReport() {
   return (
     <>
       <div className="mb-4 hidden text-center print:block">
+        <img src="/logo.png" alt="" className="mx-auto mb-1 h-16 w-16" />
         <div className="text-lg font-bold">{data?.coop.name}</div>
         {data?.coop.address && <div className="text-sm">{data.coop.address}</div>}
         {data?.coop.cdaNo && <div className="text-sm">CDA Reg. No. {data.coop.cdaNo}</div>}
