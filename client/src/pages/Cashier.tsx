@@ -1,15 +1,24 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { api, errorMessage } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import { PAYMENT_TYPE, peso } from '../lib/format';
-import type { AccountList, AccountProfile, AccountRow, Payment, PaymentType, Settings } from '../lib/types';
+import type { AccountList, AccountProfile, AccountRow, BillStatus, Payment, PaymentType, Settings } from '../lib/types';
 import { useDebounced, useLoad } from '../lib/useLoad';
-import { periodLabel } from '../lib/water';
-import { Button, Card, Detail, Field, LinkButton, Loading, MemberBadge, Modal, Notice, PageHeader } from '../components/ui';
+import { BILL_STATUS, periodLabel } from '../lib/water';
+import { Badge, Button, Card, Detail, Field, LinkButton, Loading, Modal, Notice, PageHeader } from '../components/ui';
 
 const TYPES: PaymentType[] = ['WATER_BILL', 'INSTALLATION_FEE', 'MEMBERSHIP_FEE', 'SHARE_CAPITAL', 'OTHER'];
 const AMOUNT = /^\d{1,9}(\.\d{1,2})?$/;
+
+/** What the account owes for water right now: the current bill plus any older unpaid months. */
+function waterDue(a: AccountRow): { amount: number; status: BillStatus } | null {
+  const w = a.water;
+  if (!w?.current) return null;
+  const older = Number(w.previousUnpaid);
+  const amount = Number(w.current.balance) + older;
+  return { amount, status: older > 0 ? 'OVERDUE' : w.current.status };
+}
 
 function StepTitle({ n, children }: { n: number; children: React.ReactNode }) {
   return (
@@ -28,7 +37,32 @@ export function Cashier() {
 
   const [search, setSearch] = useState('');
   const debounced = useDebounced(search);
-  const results = useLoad<AccountList>(!accountId && debounced.trim() ? `/accounts?search=${encodeURIComponent(debounced.trim())}` : null);
+  // The account list under "Who is paying?": everyone, 20 at a time, narrowed as the cashier types.
+  const [list, setList] = useState<AccountList | null>(null);
+  const [listError, setListError] = useState('');
+  const [listLoading, setListLoading] = useState(false);
+  const listTicket = useRef(0);
+  const term = debounced.trim();
+  const loadList = useCallback(
+    async (offset: number) => {
+      const ticket = ++listTicket.current;
+      setListLoading(true);
+      try {
+        const page = await api.get<AccountList>(`/accounts?search=${encodeURIComponent(term)}&offset=${offset}`);
+        if (ticket !== listTicket.current) return;
+        setList((old) => (offset > 0 && old ? { ...page, rows: [...old.rows, ...page.rows] } : page));
+        setListError('');
+      } catch (err) {
+        if (ticket === listTicket.current) setListError(errorMessage(err));
+      } finally {
+        if (ticket === listTicket.current) setListLoading(false);
+      }
+    },
+    [term],
+  );
+  useEffect(() => {
+    if (canReceive && !accountId) void loadList(0);
+  }, [canReceive, accountId, loadList]);
   const profile = useLoad<AccountProfile>(accountId ? `/accounts/${accountId}` : null);
   const settings = useLoad<Settings>('/settings');
 
@@ -59,6 +93,7 @@ export function Cashier() {
   function pickAccount(a: AccountRow | null) {
     setSaved(null);
     setSearch('');
+    setList(null); // start from the full list again next time
     setParams(a ? { account: String(a.id) } : {}, { replace: true });
   }
 
@@ -75,7 +110,8 @@ export function Cashier() {
   }
 
   const cleanAmount = amount.replace(/[₱,\s]/g, '');
-  const account = profile.data?.account;
+  // Only while an account is picked (the last one loaded must not linger after "Change").
+  const account = accountId && String(profile.data?.account.id) === accountId ? profile.data?.account : undefined;
   const orMissing = !!type && !orNumber.trim();
   const billBeingPaid = profile.data?.owed.find((o) => o.waterBillId === waterBillId && o.type === 'WATER_BILL');
 
@@ -163,34 +199,76 @@ export function Cashier() {
               <input
                 className="input text-lg"
                 type="search"
-                placeholder="Type a name, account number, or member number"
+                placeholder="Search name or number"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 autoFocus
               />
-              {results.error && (
+              {listError && (
                 <Notice tone="error" className="mt-3">
-                  {results.error}
+                  {listError}
                 </Notice>
               )}
-              {debounced.trim() && results.data && (
-                <ul className="mt-3 divide-y divide-slate-100 rounded-lg border border-slate-200">
-                  {results.data.rows.slice(0, 8).map((a) => (
-                    <li key={a.id}>
-                      <button type="button" onClick={() => pickAccount(a)} className="flex w-full flex-wrap items-center justify-between gap-2 px-4 py-3 text-left hover:bg-brand-50">
-                        <span>
-                          <span className="text-lg font-semibold">{a.fullName}</span>
-                          <span className="ml-3 text-slate-500">
-                            {a.accountNumber} · {a.area}
-                          </span>
-                        </span>
-                        <MemberBadge isMember={a.isMember} />
-                      </button>
-                    </li>
-                  ))}
-                  {results.data.rows.length === 0 && <li className="px-4 py-4 text-slate-500">No account found with that name.</li>}
-                  {results.data.total > 8 && <li className="px-4 py-2 text-sm text-slate-500">More accounts match. Type more of the name.</li>}
-                </ul>
+              {!list && listLoading && <Loading what="accounts" />}
+              {list && (
+                <>
+                  <p className="mb-1 mt-4 text-sm font-semibold text-slate-600" aria-live="polite">
+                    {list.total === 0
+                      ? 'No account found with that name.'
+                      : list.rows.length < list.total
+                        ? `Showing ${list.rows.length} of ${list.total.toLocaleString('en-US')} accounts. Click the person who is paying.`
+                        : `${list.total === 1 ? '1 account' : `${list.total} accounts`}. Click the person who is paying.`}
+                  </p>
+                  {list.rows.length > 0 && (
+                    <ul className={`divide-y divide-slate-100 rounded-lg border border-slate-200 transition-opacity ${listLoading ? 'opacity-60' : ''}`}>
+                      {list.rows.map((a) => {
+                        const due = waterDue(a);
+                        return (
+                          <li key={a.id}>
+                            <button
+                              type="button"
+                              onClick={() => pickAccount(a)}
+                              className="flex w-full items-center justify-between gap-3 px-4 py-2 text-left hover:bg-brand-50 focus-visible:bg-brand-50"
+                            >
+                              <span className="min-w-0">
+                                <span className="flex flex-wrap items-center gap-x-2">
+                                  <span className="text-base font-bold">{a.fullName}</span>
+                                  <Badge tone={a.isMember ? 'green' : 'gray'} small>
+                                    {a.isMember ? 'Member' : 'Non-member'}
+                                  </Badge>
+                                </span>
+                                <span className="block text-xs tabular-nums text-slate-500">
+                                  {a.accountNumber}
+                                  {a.memberNumber && <> · Member #{a.memberNumber}</>} · {a.area}
+                                </span>
+                              </span>
+                              <span className="shrink-0 text-right">
+                                {due ? (
+                                  <>
+                                    <span className="block text-base font-bold tabular-nums">{peso(due.amount)}</span>
+                                    <Badge tone={BILL_STATUS[due.status].tone} small>
+                                      {due.status === 'PAID' ? 'Water paid' : `Water · ${BILL_STATUS[due.status].label}`}
+                                    </Badge>
+                                  </>
+                                ) : (
+                                  <span className="text-sm text-slate-500">No water bill</span>
+                                )}
+                              </span>
+                            </button>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  )}
+                  {list.total > list.rows.length && (
+                    <div className="mt-3 flex flex-wrap items-center gap-4">
+                      <Button onClick={() => void loadList(list.rows.length)} disabled={listLoading}>
+                        {listLoading ? 'Loading…' : `Load ${Math.min(20, list.total - list.rows.length)} more`}
+                      </Button>
+                      <span className="text-sm text-slate-600">Or type the name above to find the person quickly.</span>
+                    </div>
+                  )}
+                </>
               )}
             </>
           )}
