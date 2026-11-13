@@ -163,6 +163,7 @@ model WaterConnection {
   connectionNumber String           @unique @map("connection_number")
   // From the water connection application (Form No. 2-A).
   applicationDate  DateTime?        @map("application_date") @db.Date
+  // The meter's brand, e.g. "Meco" (the "Pangalan" of the meter on the form).
   meterName        String           @default("") @map("meter_name")
   meterSerial      String           @default("") @map("meter_serial")
   remarks          String           @default("")

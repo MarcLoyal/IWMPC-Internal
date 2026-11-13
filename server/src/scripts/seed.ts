@@ -150,8 +150,8 @@ async function seed() {
           connectionNumber: `WM-${String(meter).padStart(4, '0')}`,
           address: `${person.street}, Inicbulan, Bauan, Batangas`,
           applicationDate: toDbDate(daysAgo(person.connection === 'PENDING_INSTALLATION' ? 5 : 410 + meter * 7)),
-          meterName: person.name,
-          meterSerial: `SN-${String(520100 + meter * 37)}`,
+          meterName: 'Meco',
+          meterSerial: `19-${String(7500 + meter * 37).padStart(6, '0')}`,
           // Members must be active when they join; a later disconnection is applied below.
           status: person.connection === 'PENDING_INSTALLATION' ? 'PENDING_INSTALLATION' : 'ACTIVE',
           installationDate: person.connection === 'PENDING_INSTALLATION' ? null : toDbDate(daysAgo(400 + meter * 7)),

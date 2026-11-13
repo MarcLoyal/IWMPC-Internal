@@ -340,7 +340,7 @@ accountsRouter.post(
           // Staff never type this. It is the system's own reference, set just below.
           connectionNumber: `new-${randomUUID()}`,
           applicationDate: toDbDate(data.applicationDate ?? todayManila()),
-          meterName: data.meterName || account.fullName,
+          meterName: data.meterName,
           meterSerial: data.meterSerial,
           address: data.address || account.address,
           remarks: data.remarks,

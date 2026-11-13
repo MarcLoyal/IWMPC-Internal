@@ -89,7 +89,6 @@ export function AccountForm({ makeMember = false }: { makeMember?: boolean }) {
     const a = existing.data?.account;
     if (!a) return;
     const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Manila' });
-    const meterName = existing.data?.connections.find((c) => c.status === 'ACTIVE')?.meterName ?? '';
     setForm({
       lastName: a.lastName,
       firstName: a.firstName,
@@ -112,7 +111,7 @@ export function AccountForm({ makeMember = false }: { makeMember?: boolean }) {
       membershipPurpose: a.membershipPurpose,
       sharesSubscribed: a.sharesSubscribed === null ? '' : String(a.sharesSubscribed),
       sharesAmount: a.sharesAmount ?? '',
-      meterRegisteredName: a.meterRegisteredName || (makeMember ? meterName : ''),
+      meterRegisteredName: a.meterRegisteredName || (makeMember ? a.fullName : ''),
       pmesAttended: a.pmesAttended === null ? '' : a.pmesAttended ? 'yes' : 'no',
       boardDecision: a.boardDecision ?? '',
       boardDecisionDate: a.boardDecisionDate ?? '',

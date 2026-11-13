@@ -107,19 +107,18 @@ describe('creating and editing accounts', () => {
     const maria = await makeAccount('Maria Santos');
     const first = await staff
       .post(`/api/accounts/${juan.id}/connections`)
-      .send({ applicationDate: '2026-11-01', meterSerial: 'SN-778812', remarks: 'Near the gate' });
+      .send({ applicationDate: '2026-11-01', meterName: 'Meco', meterSerial: '19-007508', remarks: 'Near the gate' });
     expect(first.status).toBe(201);
-    // The name on the meter defaults to the applicant.
     expect(first.body).toMatchObject({
       applicationDate: '2026-11-01',
-      meterSerial: 'SN-778812',
-      meterName: 'Juan Dela Cruz',
+      meterSerial: '19-007508',
+      meterName: 'Meco',
       remarks: 'Near the gate',
       status: 'PENDING_INSTALLATION',
     });
 
     // The same meter cannot be put on two connections.
-    const dup = await staff.post(`/api/accounts/${maria.id}/connections`).send({ meterSerial: 'sn-778812' });
+    const dup = await staff.post(`/api/accounts/${maria.id}/connections`).send({ meterSerial: '19-007508' });
     expect(dup.status).toBe(409);
     expect(dup.body.error).toContain('Juan Dela Cruz');
 

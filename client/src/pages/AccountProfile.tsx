@@ -244,8 +244,9 @@ export function AccountProfile() {
                   {connections.map((c) => (
                     <tr key={c.id}>
                       <td className="td">
-                        <span className="font-semibold tabular-nums">{c.meterSerial ? `Serial ${c.meterSerial}` : 'No serial number yet'}</span>
-                        {c.meterName && <span className="block text-sm text-slate-500">Name: {c.meterName}</span>}
+                        <span className="font-semibold tabular-nums">
+                          {c.meterSerial ? `${c.meterName ? `${c.meterName} ` : ''}# ${c.meterSerial}` : c.meterName || 'No serial number yet'}
+                        </span>
                       </td>
                       <td className="td">
                         {c.address || '—'}
@@ -343,7 +344,6 @@ export function AccountProfile() {
       {dialog === 'connection' && (
         <AddConnectionDialog
           accountId={account.id}
-          accountName={account.fullName}
           defaultAddress={account.address}
           onClose={() => setDialog(null)}
           onDone={() => {
@@ -381,13 +381,11 @@ export function AccountProfile() {
 /** The water connection application (Form No. 2-A). */
 function AddConnectionDialog({
   accountId,
-  accountName,
   defaultAddress,
   onClose,
   onDone,
 }: {
   accountId: number;
-  accountName: string;
   defaultAddress: string;
   onClose: () => void;
   onDone: () => void;
@@ -395,7 +393,7 @@ function AddConnectionDialog({
   const [form, setForm] = useState({
     applicationDate: new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Manila' }),
     meterSerial: '',
-    meterName: accountName,
+    meterName: '',
     address: defaultAddress,
     remarks: '',
   });
@@ -435,8 +433,8 @@ function AddConnectionDialog({
         <Field label="Date of application">
           <input className="input" type="date" value={form.applicationDate} onChange={set('applicationDate')} />
         </Field>
-        <Field label="Name on the water meter">
-          <input className="input" value={form.meterName} onChange={set('meterName')} />
+        <Field label="Water meter brand">
+          <input className="input" value={form.meterName} onChange={set('meterName')} placeholder="e.g. Meco" />
         </Field>
         <Field label="Water meter serial number">
           <input className="input" value={form.meterSerial} onChange={set('meterSerial')} autoFocus />
