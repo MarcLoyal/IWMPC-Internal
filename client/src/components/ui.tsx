@@ -63,7 +63,7 @@ export function PageHeader({
   children?: ReactNode;
 }) {
   return (
-    <div className="mb-6">
+    <div className="mb-4">
       {back && (
         <Link to={back.to} className="no-print mb-2 inline-block text-sm font-semibold text-brand-700 hover:underline">
           ← {back.label}
@@ -104,12 +104,12 @@ const DOT: Record<Tone, string> = {
   blue: 'bg-brand-600',
 };
 
-export function Badge({ tone, children }: { tone: Tone; children: ReactNode }) {
+export function Badge({ tone, children, small = false }: { tone: Tone; children: ReactNode; small?: boolean }) {
   return (
     <span
-      className={`inline-flex items-center gap-1.5 whitespace-nowrap rounded-full px-2.5 py-1 text-sm font-semibold ring-1 ring-inset ${TONE[tone]}`}
+      className={`inline-flex items-center gap-1.5 whitespace-nowrap rounded-full font-semibold ring-1 ring-inset ${small ? 'px-2 py-0.5 text-xs' : 'px-2.5 py-1 text-sm'} ${TONE[tone]}`}
     >
-      <span className={`h-2 w-2 rounded-full ${DOT[tone]}`} aria-hidden />
+      <span className={`rounded-full ${small ? 'h-1.5 w-1.5' : 'h-2 w-2'} ${DOT[tone]}`} aria-hidden />
       {children}
     </span>
   );

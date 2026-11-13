@@ -8,7 +8,7 @@ import { periodLabel } from '../lib/water';
 import { Badge, Button, Detail, Field, Modal, Notice } from './ui';
 
 export function PaymentStatusBadge({ payment }: { payment: Payment }) {
-  return payment.status === 'VOID' ? <Badge tone="red">VOID</Badge> : <Badge tone="green">Paid</Badge>;
+  return payment.status === 'VOID' ? <Badge tone="gray">VOID</Badge> : <Badge tone="green">Paid</Badge>;
 }
 
 /** Full details of one payment. Admins can void it here, with a reason. */

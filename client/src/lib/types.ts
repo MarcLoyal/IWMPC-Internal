@@ -36,7 +36,7 @@ export interface WaterBill {
 
 export interface WaterSummary {
   current: { period: string; amount: string; balance: string; status: BillStatus } | null;
-  months: { period: string; status: 'PAID' | 'UNPAID' | 'NONE'; amount: string | null; datePaid: string | null }[];
+  months: { period: string; status: BillStatus | 'NONE'; amount: string | null; datePaid: string | null }[];
   previousUnpaid: string;
 }
 
@@ -67,6 +67,7 @@ export interface AccountRow {
   areaId: number;
   isMember: boolean;
   membershipStatus: 'NONE' | 'PENDING' | 'MEMBER';
+  connectionState?: 'NONE' | 'PENDING' | 'INSTALLED';
   water?: WaterSummary;
 }
 

@@ -15,6 +15,8 @@ export default {
           700: '#000099',
           800: '#00007f',
           900: '#000061',
+          // Deep navy for the side menu.
+          950: '#070a3d',
         },
         logo: {
           yellow: '#ffed05',

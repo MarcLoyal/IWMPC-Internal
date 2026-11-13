@@ -18,7 +18,8 @@ import { billJson, billState, unpaidBills, type BillStatus } from '../services/w
 
 export const accountsRouter = Router();
 
-const MAX_ROWS = 200;
+const PAGE_SIZE = 20;
+const MAX_PAGE_SIZE = 100;
 
 const optionalDate = z
   .string()
@@ -182,10 +183,12 @@ async function waterSummaries(accountIds: number[], months: string[], today: str
       months: months.map((period) => {
         const items = inMonth(period);
         if (!items.length) return { period, status: 'NONE' as const, amount: null, datePaid: null };
-        const paid = items.every((x) => x.state.status === 'PAID');
+        // The month takes its worst bill's status, so red always means overdue.
+        const status = items.map((x) => x.state.status).reduce(worse);
+        const paid = status === 'PAID';
         return {
           period,
-          status: paid ? ('PAID' as const) : ('UNPAID' as const),
+          status,
           amount: total(items, (x) => x.bill.amount.plus(x.state.penalty)).toFixed(2),
           datePaid: paid ? items.map((x) => x.state.datePaid ?? '').sort().pop() || null : null,
         };
@@ -223,6 +226,9 @@ accountsRouter.get(
     const search = typeof req.query.search === 'string' ? req.query.search : '';
     const type = req.query.type === 'members' || req.query.type === 'non-members' ? req.query.type : 'all';
     const areaId = Number(req.query.areaId) || null;
+    // The list is loaded a page at a time ("Load more").
+    const offset = Math.max(0, Math.floor(Number(req.query.offset)) || 0);
+    const limit = Math.min(MAX_PAGE_SIZE, Math.max(1, Math.floor(Number(req.query.limit)) || PAGE_SIZE));
 
     const today = todayManila();
     // The month strip: a chosen year (Jan-Dec), or the last 12 months ending this month.
@@ -239,9 +245,10 @@ accountsRouter.get(
     const [rows, total, typeGroups, areaGroups, areas] = await Promise.all([
       prisma.account.findMany({
         where: { ...bySearch, ...byType, ...byArea },
-        include: { area: true },
+        include: { area: true, connections: { select: { status: true } } },
         orderBy: [{ fullName: 'asc' }, { id: 'asc' }],
-        take: MAX_ROWS,
+        skip: offset,
+        take: limit,
       }),
       prisma.account.count({ where: { ...bySearch, ...byType, ...byArea } }),
       prisma.account.groupBy({ by: ['isMember'], where: { ...bySearch, ...byArea }, _count: true }),
@@ -256,7 +263,17 @@ accountsRouter.get(
     const areaCount = new Map(areaGroups.map((g) => [g.areaId, g._count]));
 
     res.json({
-      rows: rows.map((r) => ({ ...accountRow(r), water: water(r.id) })),
+      rows: rows.map((r) => ({
+        ...accountRow(r),
+        // NONE: no connection yet. PENDING: applied but not installed. INSTALLED: has (or had) water.
+        connectionState: r.connections.some((c) => c.status !== 'PENDING_INSTALLATION')
+          ? 'INSTALLED'
+          : r.connections.length
+            ? 'PENDING'
+            : 'NONE',
+        water: water(r.id),
+      })),
+      offset,
       total,
       months,
       // Years that have bills, newest first, for the year selector.

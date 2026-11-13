@@ -45,12 +45,15 @@ export function Layout() {
     });
   }
 
-  // Text that disappears when the menu is hidden (computer screens only; phones keep the top bar).
-  const label = hidden ? 'md:hidden' : '';
+  // The menu shows icons only on smaller screens (laptops, or a zoomed-in browser) and whenever
+  // it was hidden with the button. Full menu: large screens. Phones keep the top bar.
+  const label = hidden ? 'md:hidden' : 'md:hidden xl:block';
+  const rail = (onRail: string, full: string) => (hidden ? onRail : `${onRail} ${full}`);
   const navClass = ({ isActive }: { isActive: boolean }) =>
-    `flex shrink-0 items-center gap-2 rounded-lg px-3 py-2.5 text-base font-semibold transition-colors md:gap-3 md:py-3 md:text-lg ${
-      hidden ? 'md:justify-center md:px-0' : 'md:px-4'
-    } ${isActive ? 'bg-logo-yellow text-brand-900 shadow-sm' : 'text-white hover:bg-white/10'}`;
+    `flex shrink-0 items-center gap-2 rounded-lg border-b-4 px-3 py-2 text-base font-semibold transition-colors md:gap-3 md:rounded-l-none md:border-b-0 md:border-l-4 md:py-2.5 md:text-lg ${rail(
+      'md:justify-center md:px-0',
+      'xl:justify-start xl:px-4',
+    )} ${isActive ? 'border-logo-yellow bg-white/15 text-white' : 'border-transparent text-brand-100 hover:bg-white/10 hover:text-white'}`;
   const items = [
     { to: '/', name: 'Home', icon: ICONS.home, end: true },
     { to: '/accounts', name: 'Accounts', icon: ICONS.accounts },
@@ -61,22 +64,21 @@ export function Layout() {
   return (
     <div className="min-h-screen md:flex">
       <aside
-        className={`no-print flex shrink-0 flex-col bg-brand-700 text-white md:sticky md:top-0 md:h-screen ${hidden ? 'md:w-[76px]' : 'md:w-64'}`}
+        className={`no-print flex shrink-0 flex-col bg-brand-950 text-white md:sticky md:top-0 md:h-screen ${rail('md:w-[72px]', 'xl:w-60')}`}
       >
-        <div className="h-1.5 bg-logo-red" aria-hidden />
-        <div className="h-1.5 bg-logo-yellow" aria-hidden />
-        <div className={`flex items-center gap-3 px-5 py-5 ${hidden ? 'md:justify-center md:px-0' : ''}`}>
+        <div className="h-1 bg-logo-yellow" aria-hidden />
+        <div className={`flex items-center gap-3 px-5 py-4 ${rail('md:justify-center md:px-0', 'xl:justify-start xl:px-5')}`}>
           <img src="/logo.png" alt="IWMPC logo" className="h-12 w-12 shrink-0 rounded-full bg-white" />
           <div className={label}>
             <div className="text-xl font-bold leading-tight">IWMPC</div>
-            <div className="text-xs text-brand-100">Inicbulan Waterworks MPC</div>
+            <div className="whitespace-nowrap text-[11px] text-brand-100">Inicbulan Waterworks MPC</div>
           </div>
         </div>
 
         {/* Loans joins this menu in Phase 1C. */}
-        <nav className="flex gap-1 overflow-x-auto px-3 pb-3 md:flex-col md:pb-0" aria-label="Main menu">
+        <nav className="flex gap-1 overflow-x-auto px-3 pb-2 md:flex-col md:px-0 md:pb-0 md:pr-3" aria-label="Main menu">
           {items.map((item) => (
-            <NavLink key={item.to} to={item.to} end={item.end} className={navClass} title={hidden ? item.name : undefined} aria-label={item.name}>
+            <NavLink key={item.to} to={item.to} end={item.end} className={navClass} title={item.name} aria-label={item.name}>
               <Icon path={item.icon} /> <span className={label}>{item.name}</span>
             </NavLink>
           ))}
@@ -87,7 +89,7 @@ export function Layout() {
           onClick={toggle}
           aria-expanded={!hidden}
           title={hidden ? 'Show menu' : undefined}
-          className={`mx-3 mt-3 hidden items-center gap-3 rounded-lg border border-white/25 py-2 text-sm font-semibold text-brand-100 hover:bg-white/10 hover:text-white md:flex ${
+          className={`mx-3 mt-3 hidden items-center gap-3 rounded-lg border border-white/20 py-2 text-sm font-semibold text-brand-100 hover:bg-white/10 hover:text-white xl:flex ${
             hidden ? 'justify-center px-0' : 'px-4'
           }`}
         >
@@ -98,12 +100,12 @@ export function Layout() {
           {hidden && <span className="sr-only">Show menu</span>}
         </button>
 
-        <div className={`mt-auto hidden border-t border-white/10 py-4 md:block ${hidden ? 'px-2 text-center' : 'px-5'}`}>
+        <div className={`mt-auto hidden border-t border-white/10 py-4 md:block ${rail('md:px-1 md:text-center', 'xl:px-5 xl:text-left')}`}>
           <div className={label}>
             <div className="font-semibold">{user?.name}</div>
             <div className="text-sm text-brand-100">{user && ROLE[user.role]}</div>
           </div>
-          <div className={`flex text-sm ${hidden ? 'flex-col items-center gap-3' : 'mt-3 items-center gap-4'}`}>
+          <div className={`flex text-sm ${rail('flex-col items-center gap-3', 'xl:mt-3 xl:flex-row xl:gap-4')}`}>
             {can('ADMIN') && (
               <NavLink to="/settings" className="font-semibold text-brand-100 underline-offset-2 hover:text-white hover:underline">
                 Settings
@@ -130,7 +132,7 @@ export function Layout() {
       </aside>
 
       <main className="min-w-0 flex-1">
-        <div className={`mx-auto px-4 py-6 sm:px-8 sm:py-8 print:max-w-none print:p-0 ${hidden ? 'max-w-none' : 'max-w-7xl'}`}>
+        <div className={`mx-auto px-4 py-5 sm:px-6 lg:px-8 print:max-w-none print:p-0 ${hidden ? 'max-w-none' : 'max-w-7xl'}`}>
           <Outlet />
         </div>
       </main>

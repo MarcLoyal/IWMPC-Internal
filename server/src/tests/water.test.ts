@@ -354,9 +354,13 @@ describe('overdue bills', () => {
     expect(all.body.months[11]).toBe(THIS);
     const row = (name: string) => all.body.rows.find((r: { fullName: string }) => r.fullName === name).water;
     expect(row('Joselito Villalon')).toMatchObject({ current: { period: LAST, status: 'OVERDUE', balance: '205.15' }, previousUnpaid: '0.00' });
-    expect(row('Joselito Villalon').months[10]).toMatchObject({ period: LAST, status: 'UNPAID' });
+    // Red is only for overdue; a bill that is not due yet is not red.
+    expect(row('Joselito Villalon').months[10]).toMatchObject({ period: LAST, status: 'OVERDUE' });
+    expect(row('Soon Person').months[11]).toMatchObject({ status: 'DUE_SOON' });
     expect(row('Paid Person').months[11]).toMatchObject({ status: 'PAID', amount: '186.50', datePaid: today });
     expect(row('No Bills')).toMatchObject({ current: null });
+    expect(all.body.rows.find((r: { fullName: string }) => r.fullName === 'No Bills').connectionState).toBe('NONE');
+    expect(all.body.rows.find((r: { fullName: string }) => r.fullName === 'Paid Person').connectionState).toBe('INSTALLED');
     expect(row('No Bills').months.every((m: { status: string }) => m.status === 'NONE')).toBe(true);
   });
 });

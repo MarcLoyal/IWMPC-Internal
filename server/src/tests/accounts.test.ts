@@ -69,6 +69,24 @@ describe('accounts list', () => {
   });
 });
 
+describe('accounts list paging', () => {
+  it('loads 20 at a time and reports the full count', async () => {
+    for (let i = 1; i <= 45; i++) await makeAccount(`Person ${String(i).padStart(2, '0')}`);
+    const board = await loginAs('BOARD');
+    const first = await board.get('/api/accounts');
+    expect(first.body.rows).toHaveLength(20);
+    expect(first.body.total).toBe(45);
+    expect(first.body.rows[0].fullName).toBe('Person 01');
+
+    const more = await board.get('/api/accounts').query({ offset: 20 });
+    expect(more.body.rows[0].fullName).toBe('Person 21');
+    const last = await board.get('/api/accounts').query({ offset: 40 });
+    expect(last.body.rows.map((r: { fullName: string }) => r.fullName)).toEqual(['Person 41', 'Person 42', 'Person 43', 'Person 44', 'Person 45']);
+    // Search still looks through every account, not just the loaded ones.
+    expect((await board.get('/api/accounts').query({ search: 'person 45' })).body.total).toBe(1);
+  });
+});
+
 describe('creating and editing accounts', () => {
   it('gives each new account the next account number', async () => {
     const staff = await loginAs('STAFF');

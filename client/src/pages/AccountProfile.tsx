@@ -23,7 +23,7 @@ const WATER_CARD = {
   NONE: 'border-l-slate-200',
 } as const;
 
-const CONNECTION_TONE = { PENDING_INSTALLATION: 'yellow', ACTIVE: 'green', DISCONNECTED: 'red' } as const;
+const CONNECTION_TONE = { PENDING_INSTALLATION: 'yellow', ACTIVE: 'green', DISCONNECTED: 'gray' } as const;
 
 export function AccountProfile() {
   const { id } = useParams();

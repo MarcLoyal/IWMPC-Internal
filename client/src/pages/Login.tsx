@@ -24,9 +24,8 @@ export function Login() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-brand-700 px-4 py-10">
+    <div className="flex min-h-screen items-center justify-center bg-brand-950 px-4 py-10">
       <div className="w-full max-w-md overflow-hidden rounded-2xl bg-white shadow-xl">
-        <div className="h-2 bg-logo-red" aria-hidden />
         <div className="h-2 bg-logo-yellow" aria-hidden />
         <div className="p-8">
         <div className="mb-7 text-center">
