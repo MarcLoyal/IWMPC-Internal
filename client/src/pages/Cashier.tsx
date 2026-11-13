@@ -76,6 +76,7 @@ export function Cashier() {
 
   const cleanAmount = amount.replace(/[₱,\s]/g, '');
   const account = profile.data?.account;
+  const orMissing = !!type && !orNumber.trim();
   const billBeingPaid = profile.data?.owed.find((o) => o.waterBillId === waterBillId && o.type === 'WATER_BILL');
 
   function review() {
@@ -277,8 +278,15 @@ export function Cashier() {
                   >
                     <input className="input text-xl font-semibold tabular-nums" inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0.00" />
                   </Field>
-                  <Field label="OR Number" hint="From the paper Official Receipt you issued.">
-                    <input className="input text-xl font-semibold tabular-nums" value={orNumber} onChange={(e) => setOrNumber(e.target.value)} autoComplete="off" />
+                  <Field label="OR Number (required)" hint="From the paper Official Receipt you issued.">
+                    <input
+                      className={`input text-xl font-semibold tabular-nums ${orMissing ? 'border-amber-500 bg-amber-50' : ''}`}
+                      value={orNumber}
+                      onChange={(e) => setOrNumber(e.target.value)}
+                      autoComplete="off"
+                      required
+                      aria-required="true"
+                    />
                   </Field>
                 </div>
               )}
@@ -288,9 +296,13 @@ export function Cashier() {
                   {error}
                 </Notice>
               )}
-              <Button variant="primary" className="mt-6 px-6 py-3 text-lg" onClick={review} disabled={!type}>
-                Review Payment
-              </Button>
+              <div className="mt-6 flex flex-wrap items-center gap-4">
+                {/* The payment cannot go on to the confirm step without an OR number. */}
+                <Button variant="primary" className="px-6 py-3 text-lg" onClick={review} disabled={!type || orMissing}>
+                  Review Payment
+                </Button>
+                {orMissing && <span className="font-semibold text-amber-800">Enter the OR number to continue.</span>}
+              </div>
             </Card>
           </>
         )}
