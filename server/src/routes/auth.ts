@@ -37,6 +37,31 @@ authRouter.post('/logout', (_req, res) => {
   res.json({ ok: true });
 });
 
+const passwordSchema = z.object({
+  currentPassword: z.string({ required_error: 'Please type your current password.' }).min(1, 'Please type your current password.'),
+  newPassword: z
+    .string({ required_error: 'Please type a new password.' })
+    .min(8, 'The new password must be at least 8 characters long.')
+    .max(100),
+});
+
+// Any user can change their own password from "My Profile".
+authRouter.post(
+  '/change-password',
+  requireUser,
+  wrap(async (req, res) => {
+    const { currentPassword, newPassword } = passwordSchema.parse(req.body);
+    const user = req.user!;
+    if (!(await bcrypt.compare(currentPassword, user.passwordHash))) {
+      throw new AppError(400, 'The current password is not correct.');
+    }
+    if (currentPassword === newPassword) throw new AppError(400, 'The new password must be different from the current one.');
+    await prisma.user.update({ where: { id: user.id }, data: { passwordHash: await bcrypt.hash(newPassword, 10) } });
+    await audit(prisma, user.id, 'user.change-password', 'user', user.id);
+    res.json({ ok: true });
+  }),
+);
+
 authRouter.get('/me', requireUser, (req, res) => {
   res.json({ user: userJson(req.user!) });
 });

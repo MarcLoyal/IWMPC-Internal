@@ -177,6 +177,20 @@ describe('roles', () => {
     expect((await cashier.get('/api/accounts')).status).toBe(401);
   });
 
+  it('lets a user change their own password', async () => {
+    const cashier = await loginAs('CASHIER');
+    const wrong = await cashier.post('/api/auth/change-password').send({ currentPassword: 'nope', newPassword: 'brand-new-pass' });
+    expect(wrong.status).toBe(400);
+    expect(wrong.body.error).toBe('The current password is not correct.');
+    expect((await cashier.post('/api/auth/change-password').send({ currentPassword: 'password123', newPassword: 'short' })).status).toBe(400);
+    expect((await cashier.post('/api/auth/change-password').send({ currentPassword: 'password123', newPassword: 'brand-new-pass' })).status).toBe(200);
+
+    const login = (password: string) => request(app).post('/api/auth/login').send({ email: 'cashier@test.local', password });
+    expect((await login('password123')).status).toBe(401);
+    expect((await login('brand-new-pass')).status).toBe(200);
+    expect((await request(app).post('/api/auth/change-password').send({ currentPassword: 'a', newPassword: 'b' })).status).toBe(401);
+  });
+
   it('Board can view but not change anything', async () => {
     const board = await loginAs('BOARD');
     const juan = await makeAccount('Juan Dela Cruz', 'ACTIVE');

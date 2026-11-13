@@ -187,12 +187,12 @@ export function Modal({
   }, [onClose]);
 
   return (
-    <div className="no-print fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-900/50 p-4 sm:items-center">
+    <div className="no-print fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-900/50 p-4">
       <div
         role="dialog"
         aria-modal="true"
         aria-label={title}
-        className={`w-full ${wide ? 'max-w-2xl' : 'max-w-lg'} rounded-xl bg-white shadow-xl`}
+        className={`my-auto w-full ${wide ? 'max-w-2xl' : 'max-w-lg'} rounded-xl bg-white shadow-xl`}
       >
         <div className="flex items-center justify-between border-b border-slate-200 px-6 py-4">
           <h2 className="text-xl font-bold">{title}</h2>

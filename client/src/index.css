@@ -45,6 +45,10 @@
   .no-print {
     display: none !important;
   }
+  /* A pop-up that prints (e.g. a water bill): hide the page behind it on paper. */
+  body.print-popup #root {
+    display: none !important;
+  }
   .print-plain {
     box-shadow: none !important;
     border-color: #cbd5e1 !important;

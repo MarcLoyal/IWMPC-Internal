@@ -1,8 +1,8 @@
 import { useState } from 'react';
-import { Link } from 'react-router-dom';
 import { formatDate, peso } from '../lib/format';
 import type { Connection, WaterBill } from '../lib/types';
 import { BILL_STATUS, RATE_CLASS, monthShort } from '../lib/water';
+import { BillModal } from './BillModal';
 import { Badge, Card } from './ui';
 
 /**
@@ -13,6 +13,7 @@ export function CustomerCard({ name, connection, bills }: { name: string; connec
   const thisYear = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Manila' }).slice(0, 4);
   const years = Array.from(new Set([thisYear, ...bills.map((b) => b.period.slice(0, 4))])).sort().reverse();
   const [year, setYear] = useState(years[0]);
+  const [openBill, setOpenBill] = useState<number | null>(null);
   const byPeriod = new Map(bills.map((b) => [b.period, b]));
   const months = Array.from({ length: 12 }, (_, i) => `${year}-${String(12 - i).padStart(2, '0')}`);
   const yearBills = months.map((m) => byPeriod.get(m)).filter((b): b is WaterBill => !!b);
@@ -99,9 +100,9 @@ export function CustomerCard({ name, connection, bills }: { name: string; connec
                     {b.status !== 'PAID' && Number(b.paid) > 0 && (
                       <span className="block text-sm text-slate-600">{peso(b.balance)} left</span>
                     )}
-                    <Link to={`/water/bills/${b.id}`} className="no-print block text-sm font-semibold text-brand-700 hover:underline">
+                    <button type="button" onClick={() => setOpenBill(b.id)} className="no-print block text-sm font-semibold text-brand-700 hover:underline">
                       Open bill
-                    </Link>
+                    </button>
                   </td>
                 </tr>
               );
@@ -130,6 +131,7 @@ export function CustomerCard({ name, connection, bills }: { name: string; connec
           Reading when installed: <span className="tabular-nums">{connection.initialReading}</span>
         </p>
       )}
+      {openBill !== null && <BillModal billId={openBill} onClose={() => setOpenBill(null)} />}
     </Card>
   );
 }

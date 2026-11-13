@@ -12,6 +12,7 @@ import { Home } from './pages/Home';
 import { Login } from './pages/Login';
 import { Settings } from './pages/Settings';
 import { Users } from './pages/Users';
+import { Profile } from './pages/Profile';
 import { BillNotice } from './pages/BillNotice';
 import { Overdue } from './pages/Overdue';
 import { WaterRates } from './pages/WaterRates';
@@ -57,6 +58,7 @@ export function App() {
         <Route path="cashier/daily-report" element={<DailyReport />} />
         <Route path="settings" element={<Only roles={['ADMIN']}><Settings /></Only>} />
         <Route path="settings/users" element={<Only roles={['ADMIN']}><Users /></Only>} />
+        <Route path="profile" element={<Profile />} />
         <Route path="login" element={<Navigate to="/" replace />} />
         <Route path="*" element={<NotFound />} />
       </Route>
