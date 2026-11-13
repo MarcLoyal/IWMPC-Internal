@@ -6,6 +6,7 @@ const ICONS = {
   home: 'M3 10.5 12 3l9 7.500V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1v-9.500Z',
   accounts:
     'M16 11a4 4 0 1 0-8 0 4 4 0 0 0 8 0ZM4 21a8 8 0 0 1 16 0',
+  water: 'M12 3c3.500 4.300 6 7.400 6 10.500a6 6 0 0 1-12 0C6 10.400 8.500 7.300 12 3Z',
   cashier: 'M3 7h18v10H3V7Zm9 7.500a2.500 2.500 0 1 0 0-5 2.500 2.500 0 0 0 0 5ZM6 10v4m12-4v4',
 };
 
@@ -38,13 +39,16 @@ export function Layout() {
           </div>
         </div>
 
-        {/* Water and Loans join this menu in Phases 1B and 1C. */}
+        {/* Loans joins this menu in Phase 1C. */}
         <nav className="flex gap-1 overflow-x-auto px-3 pb-3 md:flex-col md:pb-0" aria-label="Main menu">
           <NavLink to="/" end className={navClass}>
             <Icon path={ICONS.home} /> Home
           </NavLink>
           <NavLink to="/accounts" className={navClass}>
             <Icon path={ICONS.accounts} /> Accounts
+          </NavLink>
+          <NavLink to="/water" className={navClass}>
+            <Icon path={ICONS.water} /> Water
           </NavLink>
           <NavLink to="/cashier" className={navClass}>
             <Icon path={ICONS.cashier} /> Cashier
@@ -81,7 +85,7 @@ export function Layout() {
       </aside>
 
       <main className="min-w-0 flex-1">
-        <div className="mx-auto max-w-6xl px-4 py-6 sm:px-8 sm:py-8 print:max-w-none print:p-0">
+        <div className="mx-auto max-w-7xl px-4 py-6 sm:px-8 sm:py-8 print:max-w-none print:p-0">
           <Outlet />
         </div>
       </main>

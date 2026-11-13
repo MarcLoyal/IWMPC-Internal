@@ -12,6 +12,10 @@ import { Home } from './pages/Home';
 import { Login } from './pages/Login';
 import { Settings } from './pages/Settings';
 import { Users } from './pages/Users';
+import { BillNotice } from './pages/BillNotice';
+import { Overdue } from './pages/Overdue';
+import { WaterRates } from './pages/WaterRates';
+import { WaterReadings } from './pages/WaterReadings';
 import type { Role } from './lib/types';
 
 function Only({ roles, children }: { roles: Role[]; children: JSX.Element }) {
@@ -44,6 +48,10 @@ export function App() {
         <Route path="accounts/:id" element={<AccountProfile />} />
         <Route path="accounts/:id/edit" element={<Only roles={['ADMIN', 'STAFF']}><AccountForm /></Only>} />
         <Route path="accounts/:id/make-member" element={<Only roles={['ADMIN', 'STAFF']}><AccountForm makeMember /></Only>} />
+        <Route path="water" element={<WaterReadings />} />
+        <Route path="water/overdue" element={<Overdue />} />
+        <Route path="water/bills/:id" element={<BillNotice />} />
+        <Route path="settings/water-rates" element={<Only roles={['ADMIN']}><WaterRates /></Only>} />
         <Route path="cashier" element={<Cashier />} />
         <Route path="cashier/find" element={<FindPayment />} />
         <Route path="cashier/daily-report" element={<DailyReport />} />

@@ -3,7 +3,10 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../lib/auth';
 import type { AccountList } from '../lib/types';
 import { useDebounced, useLoad } from '../lib/useLoad';
-import { Card, Field, LinkButton, Loading, MemberBadge, Notice, PageHeader } from '../components/ui';
+import { MonthStrip } from '../components/MonthStrip';
+import { Badge, Card, Field, LinkButton, Loading, MemberBadge, Notice, PageHeader } from '../components/ui';
+import { peso } from '../lib/format';
+import { BILL_STATUS, monthShort } from '../lib/water';
 
 export function Accounts() {
   const { can } = useAuth();
@@ -12,15 +15,19 @@ export function Accounts() {
   const [search, setSearch] = useState(params.get('search') ?? '');
   const type = params.get('type') ?? 'all';
   const areaId = params.get('areaId') ?? '';
+  const water = params.get('water') ?? '';
+  const year = params.get('year') ?? '';
   const debouncedSearch = useDebounced(search);
 
   const query = new URLSearchParams();
   if (debouncedSearch.trim()) query.set('search', debouncedSearch.trim());
   if (type !== 'all') query.set('type', type);
   if (areaId) query.set('areaId', areaId);
+  if (water) query.set('water', water);
+  if (year) query.set('year', year);
   const { data, error, loading } = useLoad<AccountList>(`/accounts?${query}`);
 
-  function setFilter(key: 'type' | 'areaId', value: string) {
+  function setFilter(key: 'type' | 'areaId' | 'water' | 'year', value: string) {
     const next = new URLSearchParams(params);
     if (!value || value === 'all') next.delete(key);
     else next.set(key, value);
@@ -40,7 +47,7 @@ export function Accounts() {
       </PageHeader>
 
       <Card className="mb-5 p-5">
-        <div className="grid gap-4 md:grid-cols-[2fr_1fr_1fr]">
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-[2fr_1fr_1fr_1fr]">
           <Field label="Search">
             <input
               className="input"
@@ -68,6 +75,14 @@ export function Accounts() {
               ))}
             </select>
           </Field>
+          <Field label="Water Bill">
+            <select className="input" value={water} onChange={(e) => setFilter('water', e.target.value)}>
+              <option value="">All</option>
+              <option value="paid">Paid</option>
+              <option value="due-soon">Due soon</option>
+              <option value="overdue">Overdue</option>
+            </select>
+          </Field>
         </div>
       </Card>
 
@@ -77,14 +92,33 @@ export function Accounts() {
       {data && (
         <Card className="overflow-hidden">
           <div className={`overflow-x-auto transition-opacity ${loading ? 'opacity-60' : ''}`}>
-            <table className="w-full min-w-[640px]">
+            <table className="w-full min-w-[1000px]">
               <thead className="border-b border-slate-200 bg-slate-50">
                 <tr>
-                  <th className="th">Name</th>
-                  <th className="th">Account No.</th>
+                  <th className="th min-w-[230px]">Name</th>
                   <th className="th">Member No.</th>
                   <th className="th">Area</th>
                   <th className="th">Type</th>
+                  <th className="th">Current Water Bill</th>
+                  <th className="th">
+                    <span className="flex items-center gap-2">
+                      Previous Bills
+                      <select
+                        aria-label="Months shown"
+                        className="rounded border border-slate-300 bg-white px-1.5 py-0.5 text-xs font-semibold normal-case tracking-normal text-slate-700"
+                        value={year}
+                        onChange={(e) => setFilter('year', e.target.value)}
+                      >
+                        <option value="">Last 12 months</option>
+                        {data.years.map((y) => (
+                          <option key={y}>{y}</option>
+                        ))}
+                      </select>
+                    </span>
+                    <span className="mt-0.5 block font-normal normal-case tracking-normal text-slate-500">
+                      {monthShort(data.months[0])} {data.months[0].slice(0, 4)} to {monthShort(data.months[11])} {data.months[11].slice(0, 4)}
+                    </span>
+                  </th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -97,13 +131,26 @@ export function Accounts() {
                     role="link"
                     className="cursor-pointer hover:bg-brand-50 focus-visible:bg-brand-50"
                   >
-                    <td className="td text-lg font-semibold text-slate-900">{a.fullName}</td>
-                    <td className="td tabular-nums">{a.accountNumber}</td>
+                    <td className="td">
+                      <span className="font-semibold text-slate-900">{a.fullName}</span>
+                      <span className="block whitespace-nowrap text-sm tabular-nums text-slate-500">Account No. {a.accountNumber}</span>
+                    </td>
                     <td className="td tabular-nums">{a.memberNumber ?? '—'}</td>
                     <td className="td">{a.area}</td>
                     <td className="td">
                       <MemberBadge isMember={a.isMember} />
                     </td>
+                    <td className="td">
+                      {a.water?.current ? (
+                        <>
+                          <div className="text-lg font-semibold tabular-nums">{peso(a.water.current.amount)}</div>
+                          <Badge tone={BILL_STATUS[a.water.current.status].tone}>{BILL_STATUS[a.water.current.status].label}</Badge>
+                        </>
+                      ) : (
+                        <span className="text-slate-400">—</span>
+                      )}
+                    </td>
+                    <td className="td">{a.water && <MonthStrip months={a.water.months} previousUnpaid={a.water.previousUnpaid} />}</td>
                   </tr>
                 ))}
               </tbody>

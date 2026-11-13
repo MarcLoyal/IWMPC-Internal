@@ -4,6 +4,7 @@ import { useAuth } from '../lib/auth';
 import { PAYMENT_TYPE, formatDateTime, formatLongDate, peso } from '../lib/format';
 import type { DailyReport as Report, Payment } from '../lib/types';
 import { useLoad } from '../lib/useLoad';
+import { periodLabel } from '../lib/water';
 import { PaymentDetails } from '../components/PaymentDetails';
 import { Card, Field, Loading, Notice, PageHeader, PrintButton } from '../components/ui';
 
@@ -121,6 +122,7 @@ export function DailyReport() {
                         </td>
                         <td className="td">
                           {PAYMENT_TYPE[p.type]}
+                          {p.waterBillPeriod && <span className="block text-sm text-slate-500">{periodLabel(p.waterBillPeriod)}</span>}
                           {p.description && <span className="block text-sm text-slate-500">{p.description}</span>}
                           {p.status === 'VOID' && <span className="block text-sm font-semibold text-red-700">VOID: {p.voidReason}</span>}
                         </td>

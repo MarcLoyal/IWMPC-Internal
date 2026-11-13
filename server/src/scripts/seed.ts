@@ -105,7 +105,7 @@ async function seedWater(staffId: number, cashierId: number, or: number): Promis
 
       const unpaidMonths = behind[c.account.fullName] ?? 0;
       const lastBilled = c.status === 'DISCONNECTED' ? 1 : 0;
-      if (back === 0 || back - lastBilled < unpaidMonths) continue; // this month's bill is not paid yet
+      if (back === 0 || back - lastBilled <= unpaidMonths - lastBilled) continue; // this month's bill is not paid yet
       const bill = await prisma.waterBill.findFirstOrThrow({ where: { connectionId: c.id, period } });
       const paidOn = addDays(readDate, 4 + (i % 9));
       const payment = await recordPayment(

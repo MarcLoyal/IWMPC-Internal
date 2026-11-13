@@ -5,6 +5,8 @@ import { useAuth } from '../lib/auth';
 import { CIVIL_STATUS, CONNECTION_STATUS, PAYMENT_TYPE, SEX, ageFrom, formatDate, peso } from '../lib/format';
 import type { AccountProfile as Profile, Connection, Payment, PaymentType, Settings } from '../lib/types';
 import { useLoad } from '../lib/useLoad';
+import { BILL_STATUS, RATE_CLASS, periodLabel } from '../lib/water';
+import { CustomerCard } from '../components/CustomerCard';
 import { PaymentDetails, PaymentStatusBadge } from '../components/PaymentDetails';
 import { Badge, Button, Card, Detail, Field, LinkButton, Loading, MemberBadge, Modal, Notice, PageHeader, PrintButton } from '../components/ui';
 
@@ -12,6 +14,14 @@ type Tab = 'info' | 'water' | 'transactions';
 
 const GRID = 'grid gap-x-8 gap-y-5 sm:grid-cols-2 lg:grid-cols-3 print:grid-cols-3';
 const WIDE = 'sm:col-span-2 lg:col-span-3 print:col-span-3';
+
+const WATER_CARD = {
+  PAID: 'border-l-emerald-600',
+  UNPAID: 'border-l-slate-300',
+  DUE_SOON: 'border-l-amber-400',
+  OVERDUE: 'border-l-red-600',
+  NONE: 'border-l-slate-200',
+} as const;
 
 const CONNECTION_TONE = { PENDING_INSTALLATION: 'yellow', ACTIVE: 'green', DISCONNECTED: 'red' } as const;
 
@@ -30,7 +40,7 @@ export function AccountProfile() {
   if (error && !data) return <Notice tone="error">{error}</Notice>;
   if (!data) return null;
 
-  const { account, connections, payments, owed, warnings } = data;
+  const { account, connections, payments, owed, warnings, bills, water } = data;
   const canEdit = can('ADMIN', 'STAFF');
   const lastPayment = payments.find((p) => p.status === 'ACTIVE');
   const activeConnections = connections.filter((c) => c.status === 'ACTIVE').length;
@@ -38,6 +48,7 @@ export function AccountProfile() {
   const shownTotal = shownPayments.filter((p) => p.status === 'ACTIVE').reduce((sum, p) => sum + Number(p.amount), 0);
   const pending = account.membershipStatus === 'PENDING';
   const age = ageFrom(account.birthDate);
+  const otherOwed = owed.filter((o) => o.type !== 'WATER_BILL');
   const paid = payments.filter((p) => p.status === 'ACTIVE');
   const feePayment = paid.find((p) => p.type === 'MEMBERSHIP_FEE');
   const capitalPayments = paid.filter((p) => p.type === 'SHARE_CAPITAL');
@@ -98,21 +109,35 @@ export function AccountProfile() {
           )}
         </Notice>
       )}
-      {!pending && owed.length > 0 && (
+      {!pending && otherOwed.length > 0 && (
         <Notice tone="warning" className="no-print mb-4">
-          Unpaid: {owed.map((o) => `${o.label} (${peso(o.amount)})`).join(', ')}
+          Unpaid: {otherOwed.map((o) => `${o.label} (${peso(o.amount)})`).join(', ')}
         </Notice>
       )}
 
       <div className="mb-6 grid gap-4 sm:grid-cols-2">
-        <Card className="avoid-break p-5">
-          <div className="text-sm font-semibold uppercase tracking-wide text-slate-500">Water Connections</div>
-          <div className="mt-1 text-3xl font-bold tabular-nums">
-            {activeConnections} <span className="text-lg font-semibold text-slate-600">active</span>
+        <Card className={`avoid-break border-l-8 p-5 ${WATER_CARD[water.hasBills ? water.status : 'NONE']}`}>
+          <div className="flex items-center justify-between gap-3">
+            <div className="text-sm font-semibold uppercase tracking-wide text-slate-500">Water Bill</div>
+            {water.hasBills && <Badge tone={BILL_STATUS[water.status].tone}>{BILL_STATUS[water.status].label}</Badge>}
           </div>
-          <div className="mt-1 text-slate-600">
-            {connections.length === 0 ? 'No connection yet' : `${connections.length} in total`}
-          </div>
+          {water.hasBills ? (
+            <>
+              <div className="mt-1 text-3xl font-bold tabular-nums">{peso(water.totalDue)}</div>
+              <div className="mt-1 text-slate-600">
+                {water.status === 'PAID'
+                  ? 'Nothing to pay'
+                  : `${water.unpaidMonths === 1 ? '1 month' : `${water.unpaidMonths} months`} unpaid · due ${formatDate(water.nextDueDate)}`}
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="mt-1 text-3xl font-bold text-slate-400">—</div>
+              <div className="mt-1 text-slate-600">
+                {activeConnections ? 'No bill yet' : connections.length ? 'No active connection' : 'No connection yet'}
+              </div>
+            </>
+          )}
         </Card>
         <Card className="avoid-break p-5">
           <div className="text-sm font-semibold uppercase tracking-wide text-slate-500">Last Payment</div>
@@ -247,6 +272,7 @@ export function AccountProfile() {
                         <span className="font-semibold tabular-nums">
                           {c.meterSerial ? `${c.meterName ? `${c.meterName} ` : ''}# ${c.meterSerial}` : c.meterName || 'No serial number yet'}
                         </span>
+                        <span className="block text-sm text-slate-500">{RATE_CLASS[c.rateClass] ?? c.rateClass}</span>
                       </td>
                       <td className="td">
                         {c.address || '—'}
@@ -271,7 +297,13 @@ export function AccountProfile() {
             </div>
           )}
         </Card>
-        <p className="no-print mt-3 text-sm text-slate-500">Meter readings and monthly water bills will appear here in the Water phase.</p>
+        <div className="mt-5 space-y-5">
+          {connections
+            .filter((c) => c.status !== 'PENDING_INSTALLATION')
+            .map((c) => (
+              <CustomerCard key={c.id} name={account.fullName} connection={c} bills={bills.filter((b) => b.connectionId === c.id)} />
+            ))}
+        </div>
       </section>
 
       <section className={panel('transactions')}>
@@ -316,6 +348,7 @@ export function AccountProfile() {
                       <td className="td whitespace-nowrap">{formatDate(p.paymentDate)}</td>
                       <td className="td">
                         {PAYMENT_TYPE[p.type]}
+                        {p.waterBillPeriod && <span className="block text-sm text-slate-500">{periodLabel(p.waterBillPeriod)}</span>}
                         {p.description && <span className="block text-sm text-slate-500">{p.description}</span>}
                       </td>
                       <td className="td font-semibold tabular-nums">{p.orNumber}</td>
@@ -392,6 +425,7 @@ function AddConnectionDialog({
 }) {
   const [form, setForm] = useState({
     applicationDate: new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Manila' }),
+    rateClass: 'RESIDENTIAL',
     meterSerial: '',
     meterName: '',
     address: defaultAddress,
@@ -439,6 +473,12 @@ function AddConnectionDialog({
         <Field label="Water meter serial number">
           <input className="input" value={form.meterSerial} onChange={set('meterSerial')} autoFocus />
         </Field>
+        <Field label="Rate" className="sm:col-span-2">
+          <select className="input" value={form.rateClass} onChange={set('rateClass')}>
+            <option value="RESIDENTIAL">{RATE_CLASS.RESIDENTIAL}</option>
+            <option value="COMMERCIAL">{RATE_CLASS.COMMERCIAL}</option>
+          </select>
+        </Field>
         <Field label="Connection address" className="sm:col-span-2">
           <input className="input" value={form.address} onChange={set('address')} />
         </Field>
@@ -472,6 +512,7 @@ function ConnectionStatusDialog({
   const installing = connection.status === 'PENDING_INSTALLATION';
   const disconnecting = connection.status === 'ACTIVE';
   const [installationDate, setInstallationDate] = useState('');
+  const [initialReading, setInitialReading] = useState('0');
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
 
@@ -481,7 +522,7 @@ function ConnectionStatusDialog({
     try {
       await api.patch(`/connections/${connection.id}`, {
         status: disconnecting ? 'DISCONNECTED' : 'ACTIVE',
-        ...(installing ? { installationDate } : {}),
+        ...(installing ? { installationDate, initialReading: initialReading.trim() === '' ? 0 : Number(initialReading) } : {}),
       });
       onDone();
     } catch (err) {
@@ -526,9 +567,14 @@ function ConnectionStatusDialog({
         )}
       </p>
       {installing && (
-        <Field label="Installation date" hint="Leave blank to use today." className="mt-4">
-          <input className="input" type="date" value={installationDate} onChange={(e) => setInstallationDate(e.target.value)} />
-        </Field>
+        <div className="mt-4 grid gap-4 sm:grid-cols-2">
+          <Field label="Installation date" hint="Leave blank to use today.">
+            <input className="input" type="date" value={installationDate} onChange={(e) => setInstallationDate(e.target.value)} />
+          </Field>
+          <Field label="Meter reading when installed" hint="The first bill counts from this number.">
+            <input className="input tabular-nums" inputMode="numeric" value={initialReading} onChange={(e) => setInitialReading(e.target.value)} />
+          </Field>
+        </div>
       )}
       {disconnecting && isMember && (
         <Notice tone="warning" className="mt-4">

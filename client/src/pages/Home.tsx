@@ -11,12 +11,14 @@ function SummaryCard({
   value,
   detail,
   action,
+  tone,
 }: {
   to: string;
   label: string;
   value: string;
   detail: React.ReactNode;
   action: string;
+  tone?: 'red' | 'green';
 }) {
   return (
     <Link
@@ -24,7 +26,7 @@ function SummaryCard({
       className="group flex flex-col rounded-xl border border-slate-200 bg-white p-6 shadow-sm transition hover:border-brand-500 hover:shadow-md"
     >
       <div className="text-sm font-semibold uppercase tracking-wide text-slate-500">{label}</div>
-      <div className="mt-2 text-4xl font-bold tabular-nums tracking-tight text-slate-900">{value}</div>
+      <div className={`mt-2 text-4xl font-bold tabular-nums tracking-tight ${tone === 'red' ? 'text-red-700' : 'text-slate-900'}`}>{value}</div>
       <div className="mt-2 text-slate-600">{detail}</div>
       <div className="mt-5 font-semibold text-brand-700 group-hover:underline">{action} →</div>
     </Link>
@@ -72,7 +74,20 @@ export function Home() {
             }
             action="Open Accounts"
           />
-          <ComingCard label="Overdue Water Bills" phase="the Water phase" />
+          <SummaryCard
+            to="/water/overdue"
+            label="Overdue Water Bills"
+            value={peso(data.overdueWater.total)}
+            tone={data.overdueWater.count > 0 ? 'red' : 'green'}
+            detail={
+              data.overdueWater.count === 0
+                ? 'No overdue accounts'
+                : data.overdueWater.count === 1
+                  ? '1 account is overdue'
+                  : `${data.overdueWater.count} accounts are overdue`
+            }
+            action="Open Overdue List"
+          />
           <ComingCard label="Loans Due This Week" phase="the Loans phase" />
         </div>
       )}

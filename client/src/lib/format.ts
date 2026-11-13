@@ -43,6 +43,7 @@ export function formatLongDate(value: string): string {
 }
 
 export const PAYMENT_TYPE: Record<PaymentType, string> = {
+  WATER_BILL: 'Water Bill',
   INSTALLATION_FEE: 'Installation Fee',
   MEMBERSHIP_FEE: 'Membership Fee',
   SHARE_CAPITAL: 'Share Capital',

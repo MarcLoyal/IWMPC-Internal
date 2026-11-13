@@ -1,5 +1,45 @@
 export type Role = 'ADMIN' | 'CASHIER' | 'STAFF' | 'BOARD';
-export type PaymentType = 'INSTALLATION_FEE' | 'MEMBERSHIP_FEE' | 'SHARE_CAPITAL' | 'OTHER';
+export type PaymentType = 'WATER_BILL' | 'INSTALLATION_FEE' | 'MEMBERSHIP_FEE' | 'SHARE_CAPITAL' | 'OTHER';
+export type BillStatus = 'PAID' | 'UNPAID' | 'DUE_SOON' | 'OVERDUE';
+export type RateClass = 'RESIDENTIAL' | 'COMMERCIAL';
+
+export interface RateSchedule {
+  id: number;
+  rateClass: RateClass;
+  effectiveFrom: string;
+  minimumCharge: string;
+  minimumCoversM3: number;
+  tiers: { upTo: number | null; rate: string }[];
+  method: 'BLOCK' | 'PROGRESSIVE';
+  note: string;
+  billCount?: number;
+}
+
+/** One row of the customer card. */
+export interface WaterBill {
+  id: number;
+  connectionId: number;
+  period: string;
+  readDate: string;
+  previousReading: number;
+  currentReading: number;
+  cubicMeters: number;
+  amount: string;
+  penalty: string;
+  paid: string;
+  balance: string;
+  dueDate: string;
+  status: BillStatus;
+  datePaid: string | null;
+  orNumbers: string[];
+}
+
+export interface WaterSummary {
+  current: { period: string; amount: string; balance: string; status: BillStatus } | null;
+  months: { period: string; status: 'PAID' | 'UNPAID' | 'NONE'; amount: string | null; datePaid: string | null }[];
+  previousUnpaid: string;
+}
+
 export type Sex = 'MALE' | 'FEMALE';
 export type BoardDecision = 'APPROVED' | 'DISAPPROVED';
 export type ConnectionStatus = 'PENDING_INSTALLATION' | 'ACTIVE' | 'DISCONNECTED';
@@ -27,6 +67,7 @@ export interface AccountRow {
   areaId: number;
   isMember: boolean;
   membershipStatus: 'NONE' | 'PENDING' | 'MEMBER';
+  water?: WaterSummary;
 }
 
 export interface Beneficiary {
@@ -74,7 +115,8 @@ export interface Connection {
   meterSerial: string;
   remarks: string;
   address: string;
-  rateClass: string;
+  rateClass: RateClass;
+  initialReading: number;
   installationDate: string | null;
   status: ConnectionStatus;
 }
@@ -87,6 +129,7 @@ export interface Payment {
   type: PaymentType;
   amount: string;
   orNumber: string;
+  waterBillPeriod?: string | null;
   paymentDate: string;
   description: string;
   status: 'ACTIVE' | 'VOID';
@@ -101,12 +144,16 @@ export interface OwedItem {
   type: PaymentType;
   label: string;
   amount: string;
+  waterBillId?: number;
+  status?: BillStatus;
 }
 
 export interface AccountProfile {
   account: AccountDetail;
   connections: Connection[];
   payments: Payment[];
+  bills: WaterBill[];
+  water: { hasBills: boolean; totalDue: string; status: BillStatus; nextDueDate: string | null; unpaidMonths: number };
   owed: OwedItem[];
   warnings: string[];
   canMakeMember: boolean;
@@ -115,6 +162,8 @@ export interface AccountProfile {
 export interface AccountList {
   rows: AccountRow[];
   total: number;
+  months: string[];
+  years: string[];
   counts: {
     type: { all: number; members: number; nonMembers: number };
     areas: { id: number; name: string; count: number }[];
@@ -126,6 +175,10 @@ export interface Settings {
   coop_name: string;
   coop_address: string;
   coop_cda_no: string;
+  water_due_days: string;
+  water_penalty_type: 'PERCENT' | 'FIXED';
+  water_penalty_value: string;
+  water_disconnect_months: string;
   membership_fee: string;
   installation_fee: string;
   account_no_prefix: string;
@@ -142,6 +195,7 @@ export interface HomeSummary {
   today: string;
   collections: { total: string; count: number };
   accounts: { total: number; members: number; nonMembers: number };
+  overdueWater: { count: number; total: string };
 }
 
 export interface DailyReport {

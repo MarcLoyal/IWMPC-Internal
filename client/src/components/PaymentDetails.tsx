@@ -4,6 +4,7 @@ import { api, errorMessage } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import { PAYMENT_TYPE, formatDate, formatDateTime, peso } from '../lib/format';
 import type { Payment } from '../lib/types';
+import { periodLabel } from '../lib/water';
 import { Badge, Button, Detail, Field, Modal, Notice } from './ui';
 
 export function PaymentStatusBadge({ payment }: { payment: Payment }) {
@@ -79,7 +80,10 @@ export function PaymentDetails({
           <span className="font-semibold tabular-nums">{payment.orNumber}</span>
         </Detail>
         <Detail label="Date">{formatDate(payment.paymentDate)}</Detail>
-        <Detail label="Payment Type">{PAYMENT_TYPE[payment.type]}</Detail>
+        <Detail label="Payment Type">
+          {PAYMENT_TYPE[payment.type]}
+          {payment.waterBillPeriod && <span className="block text-slate-600">for {periodLabel(payment.waterBillPeriod)}</span>}
+        </Detail>
         <Detail label="Recorded by">{payment.createdBy}</Detail>
         {payment.accountName && (
           <Detail label="Account">

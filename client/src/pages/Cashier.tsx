@@ -5,9 +5,10 @@ import { useAuth } from '../lib/auth';
 import { PAYMENT_TYPE, peso } from '../lib/format';
 import type { AccountList, AccountProfile, AccountRow, Payment, PaymentType, Settings } from '../lib/types';
 import { useDebounced, useLoad } from '../lib/useLoad';
+import { periodLabel } from '../lib/water';
 import { Button, Card, Detail, Field, LinkButton, Loading, MemberBadge, Modal, Notice, PageHeader } from '../components/ui';
 
-const TYPES: PaymentType[] = ['INSTALLATION_FEE', 'MEMBERSHIP_FEE', 'SHARE_CAPITAL', 'OTHER'];
+const TYPES: PaymentType[] = ['WATER_BILL', 'INSTALLATION_FEE', 'MEMBERSHIP_FEE', 'SHARE_CAPITAL', 'OTHER'];
 const AMOUNT = /^\d{1,9}(\.\d{1,2})?$/;
 
 function StepTitle({ n, children }: { n: number; children: React.ReactNode }) {
@@ -32,6 +33,8 @@ export function Cashier() {
   const settings = useLoad<Settings>('/settings');
 
   const [type, setType] = useState<PaymentType | ''>('');
+  // The water bill being paid (chosen with "Pay This"). Empty = the oldest unpaid bill.
+  const [waterBillId, setWaterBillId] = useState<number | null>(null);
   const [amount, setAmount] = useState('');
   const [orNumber, setOrNumber] = useState('');
   const [description, setDescription] = useState('');
@@ -42,6 +45,7 @@ export function Cashier() {
 
   function resetForm() {
     setType('');
+    setWaterBillId(null);
     setAmount('');
     setOrNumber('');
     setDescription('');
@@ -58,9 +62,13 @@ export function Cashier() {
     setParams(a ? { account: String(a.id) } : {}, { replace: true });
   }
 
-  function pickType(next: PaymentType, presetAmount?: string) {
+  function pickType(next: PaymentType, presetAmount?: string, billId?: number) {
     setType(next);
     setError('');
+    // Picking "Water Bill" without choosing a month fills in the oldest unpaid bill.
+    const oldest = next === 'WATER_BILL' && !billId ? profile.data?.owed.find((o) => o.type === 'WATER_BILL') : undefined;
+    setWaterBillId(billId ?? oldest?.waterBillId ?? null);
+    if (oldest) presetAmount = oldest.amount;
     const fee = next === 'MEMBERSHIP_FEE' ? settings.data?.membership_fee : next === 'INSTALLATION_FEE' ? settings.data?.installation_fee : '';
     const value = presetAmount ?? fee ?? '';
     setAmount(Number(value) > 0 ? value : '');
@@ -68,6 +76,7 @@ export function Cashier() {
 
   const cleanAmount = amount.replace(/[₱,\s]/g, '');
   const account = profile.data?.account;
+  const billBeingPaid = profile.data?.owed.find((o) => o.waterBillId === waterBillId && o.type === 'WATER_BILL');
 
   function review() {
     if (!type) return setError('Please pick the payment type.');
@@ -87,6 +96,7 @@ export function Cashier() {
         type,
         amount: cleanAmount,
         orNumber,
+        waterBillId: type === 'WATER_BILL' ? waterBillId : null,
         description: type === 'OTHER' ? description : '',
       });
       setSaved(payment);
@@ -124,7 +134,8 @@ export function Cashier() {
           <h2 className="text-2xl font-bold text-emerald-800">Payment saved</h2>
           <div className="mt-4 text-4xl font-bold tabular-nums">{peso(saved.amount)}</div>
           <p className="mt-3 text-lg">
-            {PAYMENT_TYPE[saved.type]} from <strong>{saved.accountName}</strong>
+            {PAYMENT_TYPE[saved.type]}
+            {saved.waterBillPeriod && <> for {periodLabel(saved.waterBillPeriod)}</>} from <strong>{saved.accountName}</strong>
           </p>
           <p className="text-lg">
             OR Number <strong className="tabular-nums">{saved.orNumber}</strong>
@@ -206,11 +217,19 @@ export function Cashier() {
               ) : (
                 <ul className="space-y-2">
                   {profile.data.owed.map((o, i) => (
-                    <li key={i} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3">
-                      <span className="font-semibold">{o.label}</span>
+                    <li
+                      key={i}
+                      className={`flex flex-wrap items-center justify-between gap-3 rounded-lg border px-4 py-3 ${
+                        o.status === 'OVERDUE' ? 'border-red-300 bg-red-50' : 'border-amber-300 bg-amber-50'
+                      } ${o.waterBillId && o.waterBillId === waterBillId ? 'ring-2 ring-brand-700' : ''}`}
+                    >
+                      <span className="font-semibold">
+                        {o.label}
+                        {o.status === 'OVERDUE' && <span className="ml-2 text-red-700">· Overdue</span>}
+                      </span>
                       <span className="flex items-center gap-4">
                         <span className="text-xl font-bold tabular-nums">{peso(o.amount)}</span>
-                        <Button onClick={() => pickType(o.type, o.amount)}>Pay This</Button>
+                        <Button onClick={() => pickType(o.type, o.amount, o.waterBillId)}>Pay This</Button>
                       </span>
                     </li>
                   ))}
@@ -221,7 +240,7 @@ export function Cashier() {
             <Card className="p-6">
               <StepTitle n={3}>Payment</StepTitle>
               <div className="label">Payment type</div>
-              <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
+              <div className="grid grid-cols-2 gap-2 lg:grid-cols-3">
                 {TYPES.map((t) => (
                   <button
                     key={t}
@@ -244,7 +263,18 @@ export function Cashier() {
                       <input className="input" value={description} onChange={(e) => setDescription(e.target.value)} placeholder="e.g. Certification fee" />
                     </Field>
                   )}
-                  <Field label="Amount (₱)" hint={type === 'MEMBERSHIP_FEE' ? 'The membership fee must be paid in full.' : undefined}>
+                  <Field
+                    label="Amount (₱)"
+                    hint={
+                      type === 'MEMBERSHIP_FEE'
+                        ? 'The membership fee must be paid in full.'
+                        : type === 'WATER_BILL'
+                          ? billBeingPaid
+                            ? `${billBeingPaid.label}. Part payment is allowed.`
+                            : 'This account has no unpaid water bill.'
+                          : undefined
+                    }
+                  >
                     <input className="input text-xl font-semibold tabular-nums" inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0.00" />
                   </Field>
                   <Field label="OR Number" hint="From the paper Official Receipt you issued.">
@@ -287,6 +317,7 @@ export function Cashier() {
             </Detail>
             <Detail label="Payment type">
               <span className="text-xl font-semibold">{PAYMENT_TYPE[type]}</span>
+              {type === 'WATER_BILL' && billBeingPaid && <span className="block text-slate-600">{billBeingPaid.label}</span>}
               {type === 'OTHER' && <span className="block text-slate-600">{description}</span>}
             </Detail>
             <Detail label="Amount">

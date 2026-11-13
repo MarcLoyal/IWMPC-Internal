@@ -157,6 +157,7 @@ export function Settings() {
   return (
     <>
       <PageHeader title="Settings" subtitle="Only Admins can see and change these.">
+        <LinkButton to="/settings/water-rates">Water Rates</LinkButton>
         <LinkButton to="/settings/users">Users and Roles</LinkButton>
       </PageHeader>
       {error && <Notice tone="error">{error}</Notice>}
@@ -187,6 +188,34 @@ export function Settings() {
                 </Field>
                 <Field label="Installation fee (₱)">
                   <input className="input tabular-nums" inputMode="decimal" value={v.installation_fee ?? ''} onChange={set('installation_fee')} />
+                </Field>
+              </div>
+            )}
+          </Section>
+
+          <Section
+            title="Water Billing"
+            help="These apply to bills made from now on. Bills already made keep their own due date and penalty. Water rates are on their own page (button above)."
+            keys={['water_due_days', 'water_penalty_type', 'water_penalty_value', 'water_disconnect_months']}
+            settings={data}
+            onSaved={reload}
+          >
+            {(v, set) => (
+              <div className="grid gap-4 sm:grid-cols-2">
+                <Field label="Due date: days after the meter reading">
+                  <input className="input tabular-nums" inputMode="numeric" value={v.water_due_days ?? ''} onChange={set('water_due_days')} />
+                </Field>
+                <Field label="Disconnection list: unpaid months" hint="Accounts with this many overdue months are listed. Nothing is disconnected automatically.">
+                  <input className="input tabular-nums" inputMode="numeric" value={v.water_disconnect_months ?? ''} onChange={set('water_disconnect_months')} />
+                </Field>
+                <Field label="Late penalty">
+                  <select className="input" value={v.water_penalty_type ?? 'PERCENT'} onChange={set('water_penalty_type')}>
+                    <option value="PERCENT">A percent of the bill</option>
+                    <option value="FIXED">A fixed amount in pesos</option>
+                  </select>
+                </Field>
+                <Field label={v.water_penalty_type === 'FIXED' ? 'Penalty amount (₱)' : 'Penalty percent (%)'} hint="Use 0 for no penalty.">
+                  <input className="input tabular-nums" inputMode="decimal" value={v.water_penalty_value ?? ''} onChange={set('water_penalty_value')} />
                 </Field>
               </div>
             )}
