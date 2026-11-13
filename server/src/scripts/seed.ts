@@ -16,6 +16,8 @@ import { parseMoney } from '../lib/money';
 import { recordPayment } from '../services/payments';
 import { startMembership } from '../services/membership';
 import { nextNumber } from '../services/numbering';
+import { addDays, addMonths, periodOf } from '../lib/periods';
+import { refreshBillSettled, saveReadings } from '../services/water';
 import { bootstrap } from './bootstrap';
 
 const SAMPLE_PASSWORD = 'iwmpc12345';
@@ -72,6 +74,51 @@ function daysAgo(n: number): string {
   return todayManila(new Date(Date.now() - n * 86_400_000));
 }
 
+/** Sample meter readings, bills and water payments. Returns the next unused OR number. */
+async function seedWater(staffId: number, cashierId: number, or: number): Promise<number> {
+  // Water: 8 months of readings and bills for every installed connection. Most are paid on time;
+  // a few accounts are behind so the Overdue list and the colors have something to show.
+  const today = todayManila();
+  const thisMonth = periodOf(today);
+  const behind: Record<string, number> = { 'Pedro Bautista': 1, 'Teresita Flores': 2, 'Manuel Quezon Domingo': 3, 'Gloria Pascual': 1 };
+  const installed = await prisma.waterConnection.findMany({
+    where: { status: { not: 'PENDING_INSTALLATION' } },
+    include: { account: true },
+    orderBy: { id: 'asc' },
+  });
+  for (const [i, c] of installed.entries()) {
+    await prisma.waterConnection.update({ where: { id: c.id }, data: { initialReading: 1200 + i * 137 } });
+  }
+  for (let back = 7; back >= 0; back--) {
+    const period = addMonths(thisMonth, -back);
+    // Meters are read around the 26th; this month's reading was a few days ago.
+    const readDate = back === 0 ? addDays(today, -3) : `${period}-26`;
+    for (const [i, c] of installed.entries()) {
+      // Disconnected accounts stop being read after their last unpaid months.
+      if (c.status === 'DISCONNECTED' && back < 1) continue;
+      const last = await prisma.meterReading.findFirst({ where: { connectionId: c.id }, orderBy: { period: 'desc' } });
+      const usage = 9 + ((i * 7 + back * 5) % 21);
+      const current = (last?.currentReading ?? 1200 + i * 137) + usage;
+      await prisma.waterConnection.update({ where: { id: c.id }, data: { status: 'ACTIVE' } });
+      await saveReadings(period, readDate, [{ connectionId: c.id, currentReading: current }], staffId);
+      if (c.status === 'DISCONNECTED') await prisma.waterConnection.update({ where: { id: c.id }, data: { status: 'DISCONNECTED' } });
+
+      const unpaidMonths = behind[c.account.fullName] ?? 0;
+      const lastBilled = c.status === 'DISCONNECTED' ? 1 : 0;
+      if (back === 0 || back - lastBilled < unpaidMonths) continue; // this month's bill is not paid yet
+      const bill = await prisma.waterBill.findFirstOrThrow({ where: { connectionId: c.id, period } });
+      const paidOn = addDays(readDate, 4 + (i % 9));
+      const payment = await recordPayment(
+        { accountId: c.accountId, type: 'WATER_BILL', amount: bill.amount, orNumber: String(or++), description: '', waterBillId: bill.id },
+        cashierId,
+      );
+      await prisma.payment.update({ where: { id: payment.id }, data: { paymentDate: toDbDate(paidOn) } });
+      await prisma.$transaction((tx) => refreshBillSettled(tx, bill.id));
+    }
+  }
+  return or;
+}
+
 async function seed() {
   if (process.env.SEED_SAMPLE_DATA !== 'true') {
     console.log('Sample data skipped (SEED_SAMPLE_DATA is not "true").');
@@ -86,6 +133,15 @@ async function seed() {
     return;
   }
   if ((await prisma.account.count()) > 0) {
+    // A preview that was seeded before the Water phase: add only the water history.
+    const staff = await prisma.user.findUnique({ where: { email: 'staff@iwmpc.test' } });
+    const cashier = await prisma.user.findUnique({ where: { email: 'cashier@iwmpc.test' } });
+    if (staff && cashier && (await prisma.waterBill.count()) === 0) {
+      await bootstrap();
+      await seedWater(staff.id, cashier.id, 900001);
+      console.log('Sample water readings and bills added to the existing sample accounts.');
+      return;
+    }
     console.log('Sample data skipped: the database already has accounts.');
     return;
   }
@@ -105,9 +161,9 @@ async function seed() {
   const areas = new Map((await prisma.area.findMany()).map((a) => [a.name, a.id]));
 
   let or = 1001;
-  const pay = async (accountId: number, type: 'INSTALLATION_FEE' | 'MEMBERSHIP_FEE' | 'SHARE_CAPITAL' | 'OTHER', amount: string, date: string, description = '') => {
+  const pay = async (accountId: number, type: 'WATER_BILL' | 'INSTALLATION_FEE' | 'MEMBERSHIP_FEE' | 'SHARE_CAPITAL' | 'OTHER', amount: string, date: string, description = '', waterBillId?: number) => {
     const payment = await recordPayment(
-      { accountId, type, amount: parseMoney(amount)!, orNumber: String(or++), description },
+      { accountId, type, amount: parseMoney(amount)!, orNumber: String(or++), description, waterBillId },
       cashier.id,
     );
     // Spread the sample payments over past days so reports have some history.
@@ -191,6 +247,8 @@ async function seed() {
       await prisma.waterConnection.updateMany({ where: { accountId: id }, data: { status: 'DISCONNECTED' } });
     }
   }
+
+  or = await seedWater(staff.id, cashier.id, or);
 
   // A few recent payments, including today's, a skipped OR number, and one voided payment.
   const byName = (name: string) => created.find((c) => c.person.name === name)!.id;

@@ -59,6 +59,7 @@ export function connectionJson(c: WaterConnection) {
     remarks: c.remarks,
     address: c.address,
     rateClass: c.rateClass,
+    initialReading: c.initialReading,
     installationDate: fromDbDate(c.installationDate),
     status: c.status,
   };
@@ -68,6 +69,7 @@ type PaymentWithPeople = Payment & {
   createdBy?: Pick<User, 'name'> | null;
   voidedBy?: Pick<User, 'name'> | null;
   account?: Pick<Account, 'id' | 'fullName' | 'accountNumber'> | null;
+  waterBill?: { period: string } | null;
 };
 
 export function paymentJson(p: PaymentWithPeople) {
@@ -79,6 +81,8 @@ export function paymentJson(p: PaymentWithPeople) {
     type: p.type,
     amount: p.amount.toFixed(2),
     orNumber: p.orNumber,
+    // For water bill payments: the month that was paid, e.g. "2026-10".
+    waterBillPeriod: p.waterBill?.period ?? null,
     paymentDate: fromDbDate(p.paymentDate)!,
     description: p.description,
     status: p.status,

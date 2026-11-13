@@ -1,13 +1,14 @@
 /*
  * Safe to run on every deploy, including production. It only fills in what is missing:
  *   - the 8 areas (if there are no areas yet)
- *   - default settings
+ *   - default settings and IWMPC's approved water tariff (if there are no rates yet)
  *   - the first Admin user (if there are no users yet and ADMIN_EMAIL / ADMIN_PASSWORD are set)
  * It never adds sample data. See seed.ts for that.
  */
 import '../lib/useDirectUrl';
 import bcrypt from 'bcryptjs';
 import { prisma } from '../lib/prisma';
+import { ensureDefaultRates } from '../services/rates';
 import { ensureDefaultSettings } from '../services/settings';
 
 export const DEFAULT_AREAS = ['Almasiga', 'Ipil', 'Guijo', 'Narra', 'Narra Extension', 'Yakal', 'Mulawin', 'Kamagong'];
@@ -18,6 +19,7 @@ export async function bootstrap() {
     console.log('Added the default areas.');
   }
   await ensureDefaultSettings(prisma);
+  await ensureDefaultRates(prisma);
 
   if ((await prisma.user.count()) === 0) {
     const email = process.env.ADMIN_EMAIL?.trim().toLowerCase();

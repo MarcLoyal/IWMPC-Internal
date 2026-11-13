@@ -7,6 +7,11 @@ export const SETTING_DEFAULTS = {
   coop_cda_no: '9520-04002341',
   membership_fee: '0.00',
   installation_fee: '0.00',
+  // Water billing. These apply to bills created from now on; existing bills keep their own terms.
+  water_due_days: '15',
+  water_penalty_type: 'PERCENT',
+  water_penalty_value: '10',
+  water_disconnect_months: '2',
   account_no_prefix: 'A-',
   account_no_padding: '4',
   account_no_next: '1',

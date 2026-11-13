@@ -40,8 +40,9 @@ enum ConnectionStatus {
   DISCONNECTED
 }
 
-// Water Bill and Loan Payment are added in Phases 1B and 1C.
+// Loan Payment is added in Phase 1C.
 enum PaymentType {
+  WATER_BILL
   INSTALLATION_FEE
   MEMBERSHIP_FEE
   SHARE_CAPITAL
@@ -168,16 +169,91 @@ model WaterConnection {
   meterSerial      String           @default("") @map("meter_serial")
   remarks          String           @default("")
   address          String           @default("")
-  rateClass        String           @default("Residential") @map("rate_class")
+  // RESIDENTIAL (Residential & Institutional) or COMMERCIAL (Commercial & Industrial)
+  rateClass        String           @default("RESIDENTIAL") @map("rate_class")
+  // What the meter showed when it was installed. The first bill counts from here.
+  initialReading   Int              @default(0) @map("initial_reading")
   installationDate DateTime?        @map("installation_date") @db.Date
   status           ConnectionStatus @default(PENDING_INSTALLATION)
   createdAt        DateTime         @default(now()) @map("created_at")
 
-  account  Account   @relation(fields: [accountId], references: [id])
+  account  Account        @relation(fields: [accountId], references: [id])
   payments Payment[]
+  readings MeterReading[]
+  bills    WaterBill[]
 
   @@index([accountId])
   @@map("water_connections")
+}
+
+// One version of the tariff for one rate class. Changing the rates adds a new version with a
+// later "effective from" month; old versions are never edited, so past bills are not affected.
+model RateSchedule {
+  id              Int      @id @default(autoincrement())
+  rateClass       String   @map("rate_class")
+  // First billing month (YYYY-MM) this version applies to.
+  effectiveFrom   String   @map("effective_from")
+  minimumCharge   Decimal  @map("minimum_charge") @db.Decimal(12, 2)
+  minimumCoversM3 Int      @map("minimum_covers_m3")
+  // [{ "upTo": 10, "rate": "19.50" }, ..., { "upTo": null, "rate": "31.90" }]
+  tiers           Json
+  // BLOCK: every cu.m above the minimum is charged at the rate of the block the total falls in.
+  // PROGRESSIVE: each block is charged at its own rate.
+  method          String   @default("BLOCK")
+  note            String   @default("")
+  createdAt       DateTime @default(now()) @map("created_at")
+  createdById     Int?     @map("created_by")
+
+  bills WaterBill[]
+
+  @@unique([rateClass, effectiveFrom])
+  @@map("rate_schedules")
+}
+
+model MeterReading {
+  id              Int      @id @default(autoincrement())
+  connectionId    Int      @map("connection_id")
+  period          String // YYYY-MM
+  previousReading Int      @map("previous_reading")
+  currentReading  Int      @map("current_reading")
+  readDate        DateTime @map("read_date") @db.Date
+  enteredById     Int      @map("entered_by")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  connection WaterConnection @relation(fields: [connectionId], references: [id])
+  bill       WaterBill?
+
+  @@unique([connectionId, period])
+  @@map("meter_readings")
+}
+
+// The amounts are fixed when the bill is created. Later rate or penalty changes do not touch them.
+model WaterBill {
+  id             Int       @id @default(autoincrement())
+  connectionId   Int       @map("connection_id")
+  readingId      Int       @unique @map("reading_id")
+  period         String // YYYY-MM
+  cubicMeters    Int       @map("cubic_meters")
+  amount         Decimal   @db.Decimal(12, 2)
+  // Added to the bill only if it is not paid in full on or before the due date.
+  penaltyAmount  Decimal   @default(0) @map("penalty_amount") @db.Decimal(12, 2)
+  billDate       DateTime  @map("bill_date") @db.Date
+  dueDate        DateTime  @map("due_date") @db.Date
+  rateScheduleId Int       @map("rate_schedule_id")
+  // Date the bill became fully paid; empty while anything is still owed. Kept up to date
+  // whenever a payment is saved or voided.
+  settledOn      DateTime? @map("settled_on") @db.Date
+  createdAt      DateTime  @default(now()) @map("created_at")
+
+  connection   WaterConnection @relation(fields: [connectionId], references: [id])
+  reading      MeterReading    @relation(fields: [readingId], references: [id])
+  rateSchedule RateSchedule    @relation(fields: [rateScheduleId], references: [id])
+  payments     Payment[]
+
+  @@unique([connectionId, period])
+  @@index([settledOn])
+  @@index([period])
+  @@map("water_bills")
 }
 
 model Payment {
@@ -191,6 +267,7 @@ model Payment {
   paymentDate DateTime      @map("payment_date") @db.Date
   // Installation fees are linked to the connection they paid for.
   connectionId Int?         @map("connection_id")
+  waterBillId  Int?         @map("water_bill_id")
   description String        @default("")
   status      PaymentStatus @default(ACTIVE)
   voidReason  String?       @map("void_reason")
@@ -201,11 +278,13 @@ model Payment {
 
   account    Account          @relation(fields: [accountId], references: [id])
   connection WaterConnection? @relation(fields: [connectionId], references: [id])
+  waterBill  WaterBill?       @relation(fields: [waterBillId], references: [id])
   createdBy  User             @relation("PaymentCreatedBy", fields: [createdById], references: [id])
   voidedBy   User?            @relation("PaymentVoidedBy", fields: [voidedById], references: [id])
 
   @@index([accountId])
   @@index([paymentDate])
+  @@index([waterBillId])
   @@map("payments")
 }
 

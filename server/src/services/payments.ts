@@ -6,6 +6,8 @@ import { normalizeOr } from '../lib/orNumbers';
 import { audit } from './audit';
 import { getSettings } from './settings';
 import { assertCanPayMembershipFee, completeMembership, revokeMembership } from './membership';
+import { periodLabel } from '../lib/periods';
+import { billForPayment, billState, refreshBillSettled, unpaidBills } from './water';
 
 export interface NewPayment {
   accountId: number;
@@ -13,6 +15,8 @@ export interface NewPayment {
   amount: Prisma.Decimal;
   orNumber: string;
   description: string;
+  /** For Water Bill payments: the bill being paid. Empty = the oldest unpaid bill. */
+  waterBillId?: number | null;
 }
 
 async function duplicateOrError(db: Prisma.TransactionClient | typeof prisma, orNumber: string) {
@@ -53,6 +57,12 @@ export async function recordPayment(input: NewPayment, userId: number) {
       }
 
       let connectionId: number | null = null;
+      let waterBillId: number | null = null;
+      if (input.type === 'WATER_BILL') {
+        const bill = await billForPayment(tx, account.id, input.waterBillId ?? null, input.amount);
+        waterBillId = bill.id;
+        connectionId = bill.connectionId;
+      }
       if (input.type === 'MEMBERSHIP_FEE') {
         const settings = await getSettings(tx);
         await assertCanPayMembershipFee(tx, account.id, input.amount, new Prisma.Decimal(settings.membership_fee));
@@ -78,6 +88,7 @@ export async function recordPayment(input: NewPayment, userId: number) {
           orNumber,
           paymentDate: toDbDate(paymentDate),
           connectionId,
+          waterBillId,
           description: input.description.trim(),
           createdById: userId,
         },
@@ -87,6 +98,7 @@ export async function recordPayment(input: NewPayment, userId: number) {
       if (input.type === 'MEMBERSHIP_FEE') {
         await completeMembership(tx, account.id, paymentDate, userId);
       }
+      if (waterBillId) await refreshBillSettled(tx, waterBillId);
       return payment;
     });
   } catch (err) {
@@ -115,6 +127,8 @@ export async function voidPayment(paymentId: number, reason: string, userId: num
     if (payment.type === 'MEMBERSHIP_FEE') {
       await revokeMembership(tx, payment.accountId, userId);
     }
+    // The water bill goes back to unpaid.
+    if (payment.waterBillId) await refreshBillSettled(tx, payment.waterBillId);
     return updated;
   });
 }
@@ -123,13 +137,16 @@ export interface OwedItem {
   type: PaymentType;
   label: string;
   amount: string;
+  waterBillId?: number;
+  status?: string;
 }
 
 /** What the account still owes, shown on the Cashier screen. Water bills and loans join in 1B/1C. */
 export async function getOwed(accountId: number): Promise<OwedItem[]> {
-  const [account, settings, unpaidInstallations] = await Promise.all([
+  const [account, settings, bills, unpaidInstallations] = await Promise.all([
     prisma.account.findUnique({ where: { id: accountId } }),
     getSettings(prisma),
+    unpaidBills(prisma, { connection: { accountId } }),
     prisma.waterConnection.findMany({
       where: {
         accountId,
@@ -141,6 +158,19 @@ export async function getOwed(accountId: number): Promise<OwedItem[]> {
   ]);
   if (!account) throw notFound('This account');
   const owed: OwedItem[] = [];
+  const severalConnections = new Set(bills.map((b) => b.connectionId)).size > 1;
+  for (const bill of bills) {
+    const state = billState(bill, bill.payments);
+    const meter = severalConnections && bill.connection.meterSerial ? `, water meter ${bill.connection.meterSerial}` : '';
+    const penalty = state.penalty.gt(0) ? ', with late penalty' : '';
+    owed.push({
+      type: 'WATER_BILL',
+      label: `Water Bill for ${periodLabel(bill.period)}${meter}${penalty}`,
+      amount: state.balance.toFixed(2),
+      waterBillId: bill.id,
+      status: state.status,
+    });
+  }
   for (const c of unpaidInstallations) {
     owed.push({
       type: 'INSTALLATION_FEE',

@@ -8,6 +8,7 @@ import { findOrGaps } from '../lib/orNumbers';
 import { paymentJson } from '../lib/serialize';
 import { wrap } from '../middleware/auth';
 import { getSettings } from '../services/settings';
+import { billState, unpaidBills } from '../services/water';
 
 export const reportsRouter = Router();
 
@@ -16,7 +17,7 @@ reportsRouter.get(
   '/home',
   wrap(async (_req, res) => {
     const today = todayManila();
-    const [collections, members, nonMembers] = await Promise.all([
+    const [collections, members, nonMembers, unpaid] = await Promise.all([
       prisma.payment.aggregate({
         where: { paymentDate: toDbDate(today), status: 'ACTIVE' },
         _sum: { amount: true },
@@ -24,7 +25,16 @@ reportsRouter.get(
       }),
       prisma.account.count({ where: { isMember: true } }),
       prisma.account.count({ where: { isMember: false } }),
+      unpaidBills(prisma),
     ]);
+    const overdueAccounts = new Set<number>();
+    let overdueTotal = new Prisma.Decimal(0);
+    for (const bill of unpaid) {
+      const state = billState(bill, bill.payments, today);
+      if (state.status !== 'OVERDUE') continue;
+      overdueAccounts.add(bill.connection.accountId);
+      overdueTotal = overdueTotal.plus(state.balance);
+    }
     res.json({
       today,
       collections: {
@@ -32,6 +42,7 @@ reportsRouter.get(
         count: collections._count,
       },
       accounts: { total: members + nonMembers, members, nonMembers },
+      overdueWater: { count: overdueAccounts.size, total: overdueTotal.toFixed(2) },
     });
   }),
 );
@@ -48,6 +59,7 @@ reportsRouter.get(
         where: { paymentDate: toDbDate(date) },
         include: {
           account: { select: { id: true, fullName: true, accountNumber: true } },
+          waterBill: { select: { period: true } },
           createdBy: { select: { name: true } },
           voidedBy: { select: { name: true } },
         },

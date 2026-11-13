@@ -3,6 +3,7 @@ import request from 'supertest';
 import type { ConnectionStatus, Role } from '@prisma/client';
 import { app } from '../app';
 import { prisma } from '../lib/prisma';
+import { ensureDefaultRates } from '../services/rates';
 import { ensureDefaultSettings } from '../services/settings';
 
 const PASSWORD = 'password123';
@@ -12,10 +13,11 @@ const HASH = bcrypt.hashSync(PASSWORD, 4);
 /** Empties the test database and adds the basics: one area, settings, one user per role. */
 export async function resetDb() {
   await prisma.$executeRawUnsafe(
-    'TRUNCATE audit_log, payments, beneficiaries, water_connections, accounts, areas, settings, users RESTART IDENTITY CASCADE',
+    'TRUNCATE audit_log, payments, water_bills, meter_readings, rate_schedules, beneficiaries, water_connections, accounts, areas, settings, users RESTART IDENTITY CASCADE',
   );
   await prisma.area.createMany({ data: [{ name: 'Narra' }, { name: 'Ipil' }] });
   await ensureDefaultSettings(prisma);
+  await ensureDefaultRates(prisma);
   await prisma.setting.update({ where: { key: 'membership_fee' }, data: { value: '500.00' } });
   await prisma.setting.update({ where: { key: 'installation_fee' }, data: { value: '3500.00' } });
   for (const role of ['ADMIN', 'CASHIER', 'STAFF', 'BOARD'] as Role[]) {

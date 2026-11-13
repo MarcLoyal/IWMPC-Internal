@@ -13,13 +13,14 @@ export const paymentsRouter = Router();
 
 const people = {
   account: { select: { id: true, fullName: true, accountNumber: true } },
+  waterBill: { select: { period: true } },
   createdBy: { select: { name: true } },
   voidedBy: { select: { name: true } },
 } as const;
 
 const paymentSchema = z.object({
   accountId: z.coerce.number({ invalid_type_error: 'Please pick an account.' }).int().positive('Please pick an account.'),
-  type: z.enum(['INSTALLATION_FEE', 'MEMBERSHIP_FEE', 'SHARE_CAPITAL', 'OTHER'], {
+  type: z.enum(['WATER_BILL', 'INSTALLATION_FEE', 'MEMBERSHIP_FEE', 'SHARE_CAPITAL', 'OTHER'], {
     errorMap: () => ({ message: 'Please pick the payment type.' }),
   }),
   amount: z.union([z.string(), z.number()], { errorMap: () => ({ message: 'Please enter the amount.' }) }).transform(String),
@@ -29,6 +30,7 @@ const paymentSchema = z.object({
     .min(1, 'Please enter the OR number from the receipt booklet.')
     .max(30, 'The OR number is too long.'),
   description: z.string().trim().max(200).default(''),
+  waterBillId: z.coerce.number().int().positive().nullable().optional(),
 });
 
 paymentsRouter.post(
