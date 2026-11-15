@@ -151,6 +151,15 @@ export function Cashier() {
   const onCredit = isSale && credit && creditAllowed;
   const total = cartTotal(cart);
   const orMissing = !!type && !orNumber.trim() && !onCredit;
+  // The membership fee is paid in full in one payment: less (or more) than the fee cannot go on.
+  const fee = Number(settings.data?.membership_fee ?? 0);
+  const typed = AMOUNT.test(cleanAmount) ? Number(cleanAmount) : null;
+  const feeProblem =
+    type !== 'MEMBERSHIP_FEE' || typed === null || Math.round(typed * 100) === Math.round(fee * 100)
+      ? null
+      : typed < fee
+        ? `This is ${peso(fee - typed)} short. The membership fee is ${peso(fee)} and must be paid in full.`
+        : `This is more than the membership fee of ${peso(fee)}. Please enter exactly ${peso(fee)}.`;
   const creditBeingPaid = profile.data?.owed.find((o) => o.saleId && o.saleId === saleId);
   const buyerName = account?.fullName ?? (walkInName.trim() || 'Walk-in customer');
   const billBeingPaid = profile.data?.owed.find((o) => o.waterBillId === waterBillId && o.type === 'WATER_BILL');
@@ -164,6 +173,7 @@ export function Cashier() {
       return setConfirming(true);
     }
     if (!AMOUNT.test(cleanAmount) || Number(cleanAmount) <= 0) return setError('Please enter a valid amount, for example 1250.00.');
+    if (feeProblem) return setError(feeProblem);
     if (type === 'OTHER' && !description.trim()) return setError('Please type a short description of what this payment is for.');
     if (!orNumber.trim()) return setError('Please enter the OR number from the receipt booklet.');
     setError('');
@@ -507,7 +517,15 @@ export function Cashier() {
                             : undefined
                     }
                   >
-                    <input className="input text-xl font-semibold tabular-nums" inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0.00" />
+                    <input
+                      className={`input text-xl font-semibold tabular-nums ${feeProblem ? 'border-red-500 bg-red-50' : ''}`}
+                      inputMode="decimal"
+                      value={amount}
+                      onChange={(e) => setAmount(e.target.value)}
+                      placeholder="0.00"
+                      aria-invalid={!!feeProblem}
+                    />
+                    {feeProblem && <span className="mt-1 block font-semibold text-red-700">{feeProblem}</span>}
                   </Field>
                   <Field label="OR Number (required)" hint="From the paper Official Receipt you issued.">
                     <input
@@ -529,11 +547,15 @@ export function Cashier() {
               )}
               <div className="mt-6 flex flex-wrap items-center gap-4">
                 {/* The payment cannot go on to the confirm step without an OR number. */}
-                <Button variant="primary" className="px-6 py-3 text-lg" onClick={review} disabled={!type || (isSale ? cart.length === 0 || orMissing : orMissing)}>
+                <Button variant="primary" className="px-6 py-3 text-lg" onClick={review} disabled={!type || (isSale ? cart.length === 0 || orMissing : orMissing || !!feeProblem)}>
                   {isSale ? 'Review Sale' : 'Review Payment'}
                 </Button>
                 {isSale && cart.length === 0 && <span className="font-semibold text-slate-600">Add at least one item to continue.</span>}
-                {orMissing && (!isSale || cart.length > 0) && <span className="font-semibold text-amber-800">Enter the OR number to continue.</span>}
+                {feeProblem ? (
+                  <span className="font-semibold text-red-700">The full membership fee is needed to continue.</span>
+                ) : (
+                  orMissing && (!isSale || cart.length > 0) && <span className="font-semibold text-amber-800">Enter the OR number to continue.</span>
+                )}
               </div>
             </Card>
           </>
