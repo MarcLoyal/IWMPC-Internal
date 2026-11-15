@@ -2,12 +2,17 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { api, errorMessage } from '../lib/api';
 import { useAuth } from '../lib/auth';
-import { peso } from '../lib/format';
+import { formatDate, peso } from '../lib/format';
+import type { AccountRow } from '../lib/types';
 import type { AccountList } from '../lib/types';
 import { useDebounced } from '../lib/useLoad';
 import { BILL_STATUS, monthShort } from '../lib/water';
 import { MonthLegend, MonthStrip } from '../components/MonthStrip';
 import { Badge, Button, Card, Field, LinkButton, Loading, Notice, PageHeader } from '../components/ui';
+
+function lastPurchaseText(p: NonNullable<AccountRow['lastPurchase']>): string {
+  return `${p.item}${p.moreItems > 0 ? ` + ${p.moreItems} more` : ''}, ${peso(p.amount)}, ${formatDate(p.date)}`;
+}
 
 export function Accounts() {
   const { can } = useAuth();
@@ -133,6 +138,7 @@ export function Accounts() {
                 <col className="w-[13%]" />
                 <col className="w-[22%]" />
                 <col className="w-[268px]" />
+                <col className="hidden w-[15%] 2xl:table-column" />
               </colgroup>
               <thead className="border-b border-slate-200 bg-slate-50">
                 <tr>
@@ -158,6 +164,7 @@ export function Accounts() {
                       {monthShort(data.months[0])} {data.months[0].slice(0, 4)} to {monthShort(data.months[11])} {data.months[11].slice(0, 4)}
                     </span>
                   </th>
+                  <th className="th hidden py-1.5 2xl:table-cell">Last Rice/LPG</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -183,6 +190,12 @@ export function Accounts() {
                           {a.accountNumber}
                           {a.memberNumber && <> · Member #{a.memberNumber}</>}
                         </div>
+                        {/* On smaller screens the last purchase folds in here, to keep the table from scrolling sideways. */}
+                        {a.lastPurchase && (
+                          <div className="text-xs leading-tight text-slate-500 2xl:hidden">
+                            Last Rice/LPG: {lastPurchaseText(a.lastPurchase)}
+                          </div>
+                        )}
                       </td>
                       <td className="px-4 py-1 align-middle text-sm text-slate-700">{a.area}</td>
                       <td className="px-4 py-1 align-middle">
@@ -201,6 +214,19 @@ export function Accounts() {
                       </td>
                       <td className="px-4 py-1 align-middle">
                         {a.water && <MonthStrip months={a.water.months} previousUnpaid={a.water.previousUnpaid} />}
+                      </td>
+                      <td className="hidden px-4 py-1 align-middle text-sm 2xl:table-cell">
+                        {a.lastPurchase ? (
+                          <>
+                            <span className="block font-semibold tabular-nums">{peso(a.lastPurchase.amount)}</span>
+                            <span className="block text-xs text-slate-500">
+                              {a.lastPurchase.item}
+                              {a.lastPurchase.moreItems > 0 && ` + ${a.lastPurchase.moreItems} more`} · {formatDate(a.lastPurchase.date)}
+                            </span>
+                          </>
+                        ) : (
+                          <span className="text-slate-400">—</span>
+                        )}
                       </td>
                     </tr>
                   );

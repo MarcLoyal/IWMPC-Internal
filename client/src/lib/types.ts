@@ -1,5 +1,5 @@
 export type Role = 'ADMIN' | 'CASHIER' | 'STAFF' | 'BOARD';
-export type PaymentType = 'WATER_BILL' | 'INSTALLATION_FEE' | 'MEMBERSHIP_FEE' | 'SHARE_CAPITAL' | 'OTHER';
+export type PaymentType = 'WATER_BILL' | 'INSTALLATION_FEE' | 'MEMBERSHIP_FEE' | 'SHARE_CAPITAL' | 'RICE_LPG' | 'OTHER';
 export type BillStatus = 'PAID' | 'UNPAID' | 'DUE_SOON' | 'OVERDUE';
 export type RateClass = 'RESIDENTIAL' | 'COMMERCIAL';
 
@@ -12,6 +12,8 @@ export interface RateSchedule {
   tiers: { upTo: number | null; rate: string }[];
   method: 'BLOCK' | 'PROGRESSIVE';
   note: string;
+  changedBy?: string | null;
+  changedAt?: string;
   billCount?: number;
 }
 
@@ -38,6 +40,52 @@ export interface WaterSummary {
   current: { period: string; amount: string; balance: string; status: BillStatus } | null;
   months: { period: string; status: BillStatus | 'NONE'; amount: string | null; datePaid: string | null }[];
   previousUnpaid: string;
+}
+
+/** A way a product is sold, with its price. */
+export interface ProductUnit {
+  id: number;
+  label: string;
+  price: string;
+  memberPrice: string | null;
+  active: boolean;
+}
+
+export interface Product {
+  id: number;
+  name: string;
+  active: boolean;
+  units: ProductUnit[];
+}
+
+/** One line of a Rice & LPG sale, as it was at the time of sale. */
+export interface SaleLine {
+  productName: string;
+  unitLabel: string;
+  quantity: string;
+  unitPrice: string;
+  amount: string;
+}
+
+export interface Purchase extends SaleLine {
+  saleId: number;
+  date: string;
+  status: 'ACTIVE' | 'VOID';
+  isCredit: boolean;
+  balance: string;
+  orNumbers: string[];
+}
+
+export interface PriceChange {
+  id: number;
+  unit: string;
+  oldPrice: string | null;
+  newPrice: string;
+  oldMemberPrice: string | null;
+  newMemberPrice: string | null;
+  reason: string;
+  changedBy: string | null;
+  changedAt: string;
 }
 
 export type Sex = 'MALE' | 'FEMALE';
@@ -68,6 +116,7 @@ export interface AccountRow {
   isMember: boolean;
   membershipStatus: 'NONE' | 'PENDING' | 'MEMBER';
   connectionState?: 'NONE' | 'PENDING' | 'INSTALLED';
+  lastPurchase?: { date: string; item: string; moreItems: number; amount: string } | null;
   water?: WaterSummary;
 }
 
@@ -124,7 +173,11 @@ export interface Connection {
 
 export interface Payment {
   id: number;
-  accountId: number;
+  /** Empty for a walk-in Rice & LPG sale. */
+  accountId: number | null;
+  walkIn?: boolean;
+  saleId?: number | null;
+  items?: SaleLine[];
   accountName?: string;
   accountNumber?: string;
   type: PaymentType;
@@ -146,6 +199,7 @@ export interface OwedItem {
   label: string;
   amount: string;
   waterBillId?: number;
+  saleId?: number;
   status?: BillStatus;
 }
 
@@ -154,6 +208,8 @@ export interface AccountProfile {
   connections: Connection[];
   payments: Payment[];
   bills: WaterBill[];
+  purchases: Purchase[];
+  riceLpg: { year: string; totalThisYear: string; creditBalance: string };
   water: { hasBills: boolean; totalDue: string; status: BillStatus; nextDueDate: string | null; unpaidMonths: number };
   owed: OwedItem[];
   warnings: string[];
@@ -180,6 +236,7 @@ export interface Settings {
   water_penalty_type: 'PERCENT' | 'FIXED';
   water_penalty_value: string;
   water_disconnect_months: string;
+  allow_credit: 'true' | 'false';
   membership_fee: string;
   installation_fee: string;
   account_no_prefix: string;
@@ -207,5 +264,6 @@ export interface DailyReport {
   grandTotal: string;
   count: number;
   voidedCount: number;
+  riceLpg: { lines: { product: string; unit: string; quantity: string; amount: string }[]; creditCollected: string };
   orGaps: { after: string; before: string; missing: string[]; missingCount: number }[];
 }

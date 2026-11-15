@@ -4,13 +4,14 @@ Internal system for the Inicbulan Waterworks Multi-purpose Cooperative: accounts
 collections recorded with the OR number from IWMPC's own receipt booklet, and (in later phases)
 water billing and loans.
 
-**Current phase: 1A + 1B** — Accounts, Cashier, Home, Settings, Users, and Water.
+**Current phase: 1A + 1B + 2** — Accounts, Cashier, Home, Settings, Users, Water, and Rice & LPG sales.
 
 | Phase | Contents | Status |
 |---|---|---|
 | 1A | Accounts (member / non-member), basic connections, Cashier with OR numbers, Daily Collection Report, Home, Settings, Users | Built |
 | 1B | Water: rates, meter readings, bills, customer card, overdue list | Built |
 | 1C | Loans | Not started |
+| 2 | Rice & LPG sales at the Cashier, admin-only prices with history | Built |
 
 ## What is in 1A
 
@@ -59,6 +60,30 @@ Checked against IWMPC's customer cards: the minimum charge covers the first cu.m
 and **every** cu.m above that is charged at the price of the block the total falls in.
 22 cu.m residential = 89.00 + (22 - 5) x 24.80 = 510.60. The other common method (each block at its
 own price) is available as an option when changing rates.
+
+## What is in Phase 2 (Rice & LPG)
+
+- **Products and prices** (Settings → Rice & LPG Prices): products such as Dinorado, Sinandomeng and LPG,
+  each with one or more units (per kilo, per sack (25 kg), per 11 kg tank) and a price. An optional member
+  price applies to members only. New products and units are added on screen, with no code change.
+- **Prices are Admin only.** Every route that changes a product, a price, a water rate or a setting
+  checks the Admin role on the server. Everyone else can see prices but not change them. Each price
+  change needs a reason and is kept in the product's Price History (old and new price, who, when, why).
+- **Selling at the Cashier**: payment type *Rice & LPG* → pick the product (big buttons) → pick the unit →
+  quantity (decimals allowed) → the amount is worked out → add more items if needed → one OR number for
+  the whole sale → *Is this correct?* → save. The OR rules are the same as every other payment.
+- **Walk-in customer**: a buyer with no account (name optional). Counted in the day's collections and
+  reports, but on no account.
+- **Past sales never change.** Each item keeps the product name, unit, quantity and price it was sold at.
+- **Voiding** the payment voids the whole sale; it stays visible, marked VOID, and leaves all totals.
+- **Credit (utang)**: Settings → *Allow credit*, OFF by default (the server refuses credit sales while it
+  is off). When ON, a credit sale has no OR number yet, appears in *What they owe*, and is paid later with
+  an OR number. Walk-ins cannot buy on credit.
+- **On the account**: last Rice/LPG purchase on the Accounts list, a Rice & LPG card (bought this year),
+  a printable Rice & LPG tab with yearly totals per item, and the sales in All Transactions.
+- **Reports**: Rice & LPG lines on the Daily Collection Report, and a printable *Rice & LPG Sales* report
+  by date range and product.
+- **Not yet**: stock / inventory, and patronage refund. Purchases stay linked to accounts for the refund.
 
 ## Tech
 

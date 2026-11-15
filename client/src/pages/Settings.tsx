@@ -158,6 +158,7 @@ export function Settings() {
     <>
       <PageHeader title="Settings" subtitle="Only Admins can see and change these.">
         <LinkButton to="/settings/water-rates">Water Rates</LinkButton>
+        <LinkButton to="/prices">Rice &amp; LPG Prices</LinkButton>
         <LinkButton to="/settings/users">Users and Roles</LinkButton>
       </PageHeader>
       {error && <Notice tone="error">{error}</Notice>}
@@ -218,6 +219,27 @@ export function Settings() {
                   <input className="input tabular-nums" inputMode="decimal" value={v.water_penalty_value ?? ''} onChange={set('water_penalty_value')} />
                 </Field>
               </div>
+            )}
+          </Section>
+
+          <Section
+            title="Rice & LPG"
+            help="Products and prices are on their own page (button above)."
+            keys={['allow_credit']}
+            settings={data}
+            onSaved={reload}
+          >
+            {(v, set) => (
+              <Field
+                label="Allow credit (utang)"
+                hint="When Yes, the Cashier can sell Rice & LPG to an account without payment. The amount is added to what the account owes and is paid later with an OR number."
+                className="sm:max-w-md"
+              >
+                <select className="input" value={v.allow_credit ?? 'false'} onChange={set('allow_credit')}>
+                  <option value="false">No, cash only</option>
+                  <option value="true">Yes, allow credit</option>
+                </select>
+              </Field>
             )}
           </Section>
 

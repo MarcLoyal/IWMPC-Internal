@@ -13,6 +13,8 @@ import { Login } from './pages/Login';
 import { Settings } from './pages/Settings';
 import { Users } from './pages/Users';
 import { Profile } from './pages/Profile';
+import { Products } from './pages/Products';
+import { SalesReport } from './pages/SalesReport';
 import { BillNotice } from './pages/BillNotice';
 import { Overdue } from './pages/Overdue';
 import { WaterRates } from './pages/WaterRates';
@@ -56,6 +58,8 @@ export function App() {
         <Route path="cashier" element={<Cashier />} />
         <Route path="cashier/find" element={<FindPayment />} />
         <Route path="cashier/daily-report" element={<DailyReport />} />
+        <Route path="cashier/sales-report" element={<SalesReport />} />
+        <Route path="prices" element={<Products />} />
         <Route path="settings" element={<Only roles={['ADMIN']}><Settings /></Only>} />
         <Route path="settings/users" element={<Only roles={['ADMIN']}><Users /></Only>} />
         <Route path="profile" element={<Profile />} />

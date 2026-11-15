@@ -7,10 +7,11 @@ import type { AccountProfile as Profile, Connection, Payment, PaymentType, Setti
 import { useLoad } from '../lib/useLoad';
 import { BILL_STATUS, RATE_CLASS, periodLabel } from '../lib/water';
 import { CustomerCard } from '../components/CustomerCard';
+import { PurchasesTab } from '../components/PurchasesTab';
 import { PaymentDetails, PaymentStatusBadge } from '../components/PaymentDetails';
 import { Badge, Button, Card, Detail, Field, LinkButton, Loading, MemberBadge, Modal, Notice, PageHeader, PrintButton } from '../components/ui';
 
-type Tab = 'info' | 'water' | 'transactions';
+type Tab = 'info' | 'water' | 'riceLpg' | 'transactions';
 
 const GRID = 'grid gap-x-8 gap-y-5 sm:grid-cols-2 lg:grid-cols-3 print:grid-cols-3';
 const WIDE = 'sm:col-span-2 lg:col-span-3 print:col-span-3';
@@ -40,7 +41,7 @@ export function AccountProfile() {
   if (error && !data) return <Notice tone="error">{error}</Notice>;
   if (!data) return null;
 
-  const { account, connections, payments, owed, warnings, bills, water } = data;
+  const { account, connections, payments, owed, warnings, bills, water, purchases, riceLpg } = data;
   const canEdit = can('ADMIN', 'STAFF');
   const lastPayment = payments.find((p) => p.status === 'ACTIVE');
   const activeConnections = connections.filter((c) => c.status === 'ACTIVE').length;
@@ -115,7 +116,7 @@ export function AccountProfile() {
         </Notice>
       )}
 
-      <div className="mb-6 grid gap-4 sm:grid-cols-2">
+      <div className="mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3 print:grid-cols-3">
         <Card className={`avoid-break border-l-8 p-5 ${WATER_CARD[water.hasBills ? water.status : 'NONE']}`}>
           <div className="flex items-center justify-between gap-3">
             <div className="text-sm font-semibold uppercase tracking-wide text-slate-500">Water Bill</div>
@@ -152,6 +153,16 @@ export function AccountProfile() {
             <div className="mt-1 text-3xl font-bold text-slate-400">—</div>
           )}
         </Card>
+        <Card className="avoid-break p-5">
+          <div className="text-sm font-semibold uppercase tracking-wide text-slate-500">Rice &amp; LPG</div>
+          <div className="mt-1 text-3xl font-bold tabular-nums">{peso(riceLpg.totalThisYear)}</div>
+          <div className="mt-1 text-slate-600">Bought in {riceLpg.year}</div>
+          {Number(riceLpg.creditBalance) > 0 && (
+            <div className="mt-1">
+              <Badge tone="yellow">Unpaid credit: {peso(riceLpg.creditBalance)}</Badge>
+            </div>
+          )}
+        </Card>
       </div>
 
       {canEdit && (
@@ -170,6 +181,7 @@ export function AccountProfile() {
           [
             ['info', 'Personal Info'],
             ['water', `Water (${connections.length})`],
+            ['riceLpg', `Rice & LPG (${purchases.length})`],
             ['transactions', `All Transactions (${payments.length})`],
           ] as [Tab, string][]
         ).map(([key, label]) => (
@@ -306,6 +318,11 @@ export function AccountProfile() {
         </div>
       </section>
 
+      <section className={`${panel('riceLpg')} mb-6`}>
+        <h2 className="mb-2 hidden text-lg font-bold print:block">Rice &amp; LPG</h2>
+        <PurchasesTab purchases={purchases} />
+      </section>
+
       <section className={panel('transactions')}>
         <h2 className="mb-2 hidden text-lg font-bold print:block">All Transactions</h2>
         <Card className="overflow-hidden">
@@ -348,8 +365,13 @@ export function AccountProfile() {
                       <td className="td whitespace-nowrap">{formatDate(p.paymentDate)}</td>
                       <td className="td">
                         {PAYMENT_TYPE[p.type]}
+                        {p.items?.map((item, i) => (
+                          <span key={i} className="block text-sm text-slate-500">
+                            {item.productName}, {item.quantity} × {item.unitLabel}
+                          </span>
+                        ))}
                         {p.waterBillPeriod && <span className="block text-sm text-slate-500">{periodLabel(p.waterBillPeriod)}</span>}
-                        {p.description && <span className="block text-sm text-slate-500">{p.description}</span>}
+                        {!p.items?.length && p.description && <span className="block text-sm text-slate-500">{p.description}</span>}
                       </td>
                       <td className="td font-semibold tabular-nums">{p.orNumber}</td>
                       <td className={`td text-right text-lg font-semibold tabular-nums ${p.status === 'VOID' ? 'line-through' : ''}`}>{peso(p.amount)}</td>

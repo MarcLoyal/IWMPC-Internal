@@ -92,6 +92,40 @@ export function DailyReport() {
             </Card>
           </div>
 
+          {(data.riceLpg.lines.length > 0 || Number(data.riceLpg.creditCollected) > 0) && (
+            <Card className="avoid-break mb-5">
+              <div className="border-b border-slate-200 px-4 py-2 font-bold">Rice &amp; LPG sold today</div>
+              <table className="w-full">
+                <thead className="border-b border-slate-200 bg-slate-50">
+                  <tr>
+                    <th className="th py-2">Product</th>
+                    <th className="th py-2">Unit</th>
+                    <th className="th py-2 text-right">Quantity sold</th>
+                    <th className="th py-2 text-right">Amount</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {data.riceLpg.lines.map((l) => (
+                    <tr key={`${l.product}|${l.unit}`}>
+                      <td className="td py-2 font-semibold">{l.product}</td>
+                      <td className="td py-2 text-slate-700">{l.unit}</td>
+                      <td className="td py-2 text-right tabular-nums">{l.quantity}</td>
+                      <td className="td py-2 text-right font-semibold tabular-nums">{peso(l.amount)}</td>
+                    </tr>
+                  ))}
+                  {Number(data.riceLpg.creditCollected) > 0 && (
+                    <tr>
+                      <td className="td py-2 font-semibold" colSpan={3}>
+                        Payments received for earlier credit sales
+                      </td>
+                      <td className="td py-2 text-right font-semibold tabular-nums">{peso(data.riceLpg.creditCollected)}</td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </Card>
+          )}
+
           <Card className="overflow-hidden">
             {data.payments.length === 0 ? (
               <p className="px-6 py-12 text-center text-slate-500">No payments were recorded on this day.</p>
@@ -118,12 +152,19 @@ export function DailyReport() {
                       >
                         <td className="td font-semibold tabular-nums">{p.orNumber}</td>
                         <td className="td">
-                          {p.accountName} <span className="whitespace-nowrap text-sm text-slate-500">({p.accountNumber})</span>
+                          {p.accountName}{' '}
+                          <span className="whitespace-nowrap text-sm text-slate-500">({p.accountNumber ?? 'walk-in'})</span>
                         </td>
                         <td className="td">
                           {PAYMENT_TYPE[p.type]}
                           {p.waterBillPeriod && <span className="block text-sm text-slate-500">{periodLabel(p.waterBillPeriod)}</span>}
-                          {p.description && <span className="block text-sm text-slate-500">{p.description}</span>}
+                          {p.items && p.items.length > 0
+                            ? p.items.map((item, i) => (
+                                <span key={i} className="block text-sm text-slate-500">
+                                  {item.productName}, {item.quantity} × {item.unitLabel}
+                                </span>
+                              ))
+                            : p.description && <span className="block text-sm text-slate-500">{p.description}</span>}
                           {p.status === 'VOID' && <span className="block text-sm font-semibold text-red-700">VOID: {p.voidReason}</span>}
                         </td>
                         <td className="td whitespace-nowrap">{p.createdBy}</td>
