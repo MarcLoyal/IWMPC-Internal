@@ -151,15 +151,13 @@ export function Cashier() {
   const onCredit = isSale && credit && creditAllowed;
   const total = cartTotal(cart);
   const orMissing = !!type && !orNumber.trim() && !onCredit;
-  // The membership fee is paid in full in one payment: less (or more) than the fee cannot go on.
+  // The membership fee is paid in full in one payment: less than the fee cannot go on (more is fine).
   const fee = Number(settings.data?.membership_fee ?? 0);
   const typed = AMOUNT.test(cleanAmount) ? Number(cleanAmount) : null;
   const feeProblem =
-    type !== 'MEMBERSHIP_FEE' || typed === null || Math.round(typed * 100) === Math.round(fee * 100)
-      ? null
-      : typed < fee
-        ? `This is ${peso(fee - typed)} short. The membership fee is ${peso(fee)} and must be paid in full.`
-        : `This is more than the membership fee of ${peso(fee)}. Please enter exactly ${peso(fee)}.`;
+    type === 'MEMBERSHIP_FEE' && typed !== null && Math.round(typed * 100) < Math.round(fee * 100)
+      ? `This is ${peso(fee - typed)} short. The membership fee is ${peso(fee)} and must be paid in full.`
+      : null;
   const creditBeingPaid = profile.data?.owed.find((o) => o.saleId && o.saleId === saleId);
   const buyerName = account?.fullName ?? (walkInName.trim() || 'Walk-in customer');
   const billBeingPaid = profile.data?.owed.find((o) => o.waterBillId === waterBillId && o.type === 'WATER_BILL');
@@ -507,7 +505,7 @@ export function Cashier() {
                     label="Amount (₱)"
                     hint={
                       type === 'MEMBERSHIP_FEE'
-                        ? 'The membership fee must be paid in full.'
+                        ? `At least ${peso(settings.data?.membership_fee ?? 0)}. Paying more is allowed.`
                         : type === 'WATER_BILL'
                           ? billBeingPaid
                             ? `${billBeingPaid.label}. Part payment is allowed.`

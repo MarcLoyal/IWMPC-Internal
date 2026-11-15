@@ -77,8 +77,9 @@ export async function assertCanPayMembershipFee(
   }
   // Re-checked here on the server: hiding the button is not enough.
   if (!(await hasActiveConnection(tx, accountId))) throw new AppError(400, NO_ACTIVE_CONNECTION);
-  if (!amount.equals(fee)) {
-    throw new AppError(400, `The membership fee must be paid in full: ₱${fee.toFixed(2)}.`);
+  // Paying more than the fee is allowed; paying less is not.
+  if (amount.lt(fee)) {
+    throw new AppError(400, `The membership fee must be paid in full: at least ₱${fee.toFixed(2)}.`);
   }
 }
 
