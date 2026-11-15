@@ -15,7 +15,7 @@ import { billJson, billState, saveReadings, unpaidBills } from '../services/wate
 
 export const waterRouter = Router();
 
-function scheduleJson(s: Prisma.RateScheduleGetPayload<object> & { _count?: { bills: number } }) {
+function scheduleJson(s: Prisma.RateScheduleGetPayload<object> & { _count?: { bills: number }; createdByName?: string | null }) {
   const terms = termsOf(s);
   return {
     id: s.id,
@@ -26,6 +26,8 @@ function scheduleJson(s: Prisma.RateScheduleGetPayload<object> & { _count?: { bi
     tiers: terms.tiers,
     method: terms.method,
     note: s.note,
+    changedBy: s.createdByName ?? null,
+    changedAt: s.createdAt.toISOString(),
     billCount: s._count?.bills,
   };
 }
@@ -208,10 +210,12 @@ waterRouter.get(
   '/rates',
   wrap(async (_req, res) => {
     const thisMonth = periodOf(todayManila());
-    const all = await prisma.rateSchedule.findMany({
-      orderBy: { effectiveFrom: 'desc' },
-      include: { _count: { select: { bills: true } } },
-    });
+    const [schedules, users] = await Promise.all([
+      prisma.rateSchedule.findMany({ orderBy: { effectiveFrom: 'desc' }, include: { _count: { select: { bills: true } } } }),
+      prisma.user.findMany({ select: { id: true, name: true } }),
+    ]);
+    const names = new Map(users.map((u) => [u.id, u.name]));
+    const all = schedules.map((s) => ({ ...s, createdByName: s.createdById ? names.get(s.createdById) : null }));
     res.json({
       thisMonth,
       classes: RATE_CLASSES.map((rateClass) => {
@@ -256,7 +260,12 @@ const rateSchema = z.object({
     .min(1, 'Please add at least one price per cu.m.')
     .max(12),
   method: z.enum(['BLOCK', 'PROGRESSIVE']).default('BLOCK'),
-  note: z.string().trim().max(200).default(''),
+  // Why the rates are changing. Kept with the rate version as its history.
+  note: z
+    .string({ required_error: 'Please type a short reason for the rate change.' })
+    .trim()
+    .min(1, 'Please type a short reason for the rate change.')
+    .max(200),
 });
 
 // Changing the rates always adds a new version. Bills already made keep the amounts they were made with.

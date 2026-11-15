@@ -60,6 +60,7 @@ reportsRouter.get(
         include: {
           account: { select: { id: true, fullName: true, accountNumber: true } },
           waterBill: { select: { period: true } },
+          sale: { include: { items: true } },
           createdBy: { select: { name: true } },
           voidedBy: { select: { name: true } },
         },
@@ -77,8 +78,34 @@ reportsRouter.get(
       byType.set(p.type, { count: entry.count + 1, total: entry.total.plus(p.amount) });
     }
 
+    // Rice & LPG sold and paid for today, per product and unit. Money collected today for an
+    // earlier credit sale is shown on its own line (the goods were counted on the day of sale).
+    const sold = new Map<string, { product: string; unit: string; quantity: Prisma.Decimal; amount: Prisma.Decimal }>();
+    let creditCollected = zero;
+    for (const p of active) {
+      if (p.type !== 'RICE_LPG' || !p.sale) continue;
+      if (p.sale.isCredit) {
+        creditCollected = creditCollected.plus(p.amount);
+        continue;
+      }
+      for (const item of p.sale.items) {
+        const key = `${item.productName}|${item.unitLabel}`;
+        const line = sold.get(key) ?? { product: item.productName, unit: item.unitLabel, quantity: zero, amount: zero };
+        sold.set(key, { ...line, quantity: line.quantity.plus(item.quantity), amount: line.amount.plus(item.amount) });
+      }
+    }
+
     res.json({
       date,
+      riceLpg: {
+        lines: [...sold.values()].map((l) => ({
+          product: l.product,
+          unit: l.unit,
+          quantity: l.quantity.toDecimalPlaces(2).toString(),
+          amount: l.amount.toFixed(2),
+        })),
+        creditCollected: creditCollected.toFixed(2),
+      },
       coop: { name: settings.coop_name, address: settings.coop_address, cdaNo: settings.coop_cda_no },
       payments: payments.map(paymentJson),
       totals: (Object.keys(PAYMENT_TYPE_LABEL) as PaymentType[])

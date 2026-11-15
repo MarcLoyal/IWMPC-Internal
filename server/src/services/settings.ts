@@ -12,6 +12,8 @@ export const SETTING_DEFAULTS = {
   water_penalty_type: 'PERCENT',
   water_penalty_value: '10',
   water_disconnect_months: '2',
+  // Rice & LPG: selling on credit (utang). Off unless an Admin turns it on.
+  allow_credit: 'false',
   account_no_prefix: 'A-',
   account_no_padding: '4',
   account_no_next: '1',

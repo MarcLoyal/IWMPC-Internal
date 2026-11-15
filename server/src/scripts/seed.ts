@@ -18,6 +18,7 @@ import { startMembership } from '../services/membership';
 import { nextNumber } from '../services/numbering';
 import { addDays, addMonths, periodOf } from '../lib/periods';
 import { refreshBillSettled, saveReadings } from '../services/water';
+import { createSale } from '../services/sales';
 import { bootstrap } from './bootstrap';
 
 const SAMPLE_PASSWORD = 'iwmpc12345';
@@ -119,6 +120,53 @@ async function seedWater(staffId: number, cashierId: number, or: number): Promis
   return or;
 }
 
+/** Sample prices (only where none is set) and a few weeks of Rice & LPG sales. Returns the next unused OR number. */
+async function seedSales(cashierId: number, adminId: number, or: number): Promise<number> {
+  const prices: Record<string, [string, string | null]> = {
+    'Dinorado|per kilo': ['65.00', null],
+    'Dinorado|per sack (25 kg)': ['1550.00', null],
+    'Sinandomeng|per kilo': ['52.00', null],
+    'Sinandomeng|per sack (25 kg)': ['1250.00', null],
+    'LPG|per 11 kg tank (refill)': ['950.00', null],
+  };
+  const units = await prisma.productUnit.findMany({ include: { product: true } });
+  const byKey = new Map(units.map((u) => [`${u.product.name}|${u.label}`, u]));
+  for (const [key, [price]] of Object.entries(prices)) {
+    const unit = byKey.get(key);
+    if (!unit || !unit.price.isZero()) continue;
+    await prisma.productUnit.update({ where: { id: unit.id }, data: { price } });
+    await prisma.priceChange.create({
+      data: { productUnitId: unit.id, oldPrice: 0, newPrice: price, reason: 'Sample price for the preview', changedById: adminId },
+    });
+  }
+  const unit = (key: string) => byKey.get(key)?.id;
+  const accounts = await prisma.account.findMany({ orderBy: { id: 'asc' }, take: 12 });
+  const baskets: [string, number][][] = [
+    [['Dinorado|per sack (25 kg)', 1]],
+    [['LPG|per 11 kg tank (refill)', 1]],
+    [['Sinandomeng|per kilo', 5]],
+    [['Dinorado|per kilo', 2.5], ['LPG|per 11 kg tank (refill)', 1]],
+    [['Sinandomeng|per sack (25 kg)', 1], ['LPG|per 11 kg tank (refill)', 1]],
+    [['Dinorado|per kilo', 10]],
+  ];
+  // Sales over the last five weeks, a walk-in every fourth one, the last three today.
+  for (let i = 0; i < 18; i++) {
+    const items = baskets[i % baskets.length]
+      .map(([key, quantity]) => ({ unitId: unit(key), quantity: parseMoney(String(quantity))! }))
+      .filter((item): item is { unitId: number; quantity: NonNullable<ReturnType<typeof parseMoney>> } => !!item.unitId);
+    if (!items.length) continue;
+    const walkIn = i % 4 === 3;
+    const { sale, payment } = await createSale(
+      { accountId: walkIn ? null : accounts[(i * 5) % accounts.length]?.id ?? null, walkInName: walkIn && i % 8 === 3 ? 'Aling Nena' : '', items, orNumber: String(or++), credit: false },
+      cashierId,
+    );
+    const date = toDbDate(todayManila(new Date(Date.now() - Math.max(0, 34 - i * 2) * 86_400_000)));
+    await prisma.sale.update({ where: { id: sale.id }, data: { saleDate: date, settledOn: date } });
+    if (payment) await prisma.payment.update({ where: { id: payment.id }, data: { paymentDate: date } });
+  }
+  return or;
+}
+
 async function seed() {
   if (process.env.SEED_SAMPLE_DATA !== 'true') {
     console.log('Sample data skipped (SEED_SAMPLE_DATA is not "true").');
@@ -136,12 +184,22 @@ async function seed() {
     // A preview that was seeded before the Water phase: add only the water history.
     const staff = await prisma.user.findUnique({ where: { email: 'staff@iwmpc.test' } });
     const cashier = await prisma.user.findUnique({ where: { email: 'cashier@iwmpc.test' } });
+    // A preview that was seeded before a later phase: add only that phase's sample data.
+    const admin = await prisma.user.findFirst({ where: { role: 'ADMIN' }, orderBy: { id: 'asc' } });
+    let added = false;
     if (staff && cashier && (await prisma.waterBill.count()) === 0) {
       await bootstrap();
       await seedWater(staff.id, cashier.id, 900001);
       console.log('Sample water readings and bills added to the existing sample accounts.');
-      return;
+      added = true;
     }
+    if (cashier && admin && (await prisma.sale.count()) === 0) {
+      await bootstrap();
+      await seedSales(cashier.id, admin.id, 950001);
+      console.log('Sample Rice & LPG prices and sales added to the existing sample accounts.');
+      added = true;
+    }
+    if (added) return;
     console.log('Sample data skipped: the database already has accounts.');
     return;
   }
@@ -249,6 +307,7 @@ async function seed() {
   }
 
   or = await seedWater(staff.id, cashier.id, or);
+  or = await seedSales(cashier.id, admin.id, or);
 
   // A few recent payments, including today's, a skipped OR number, and one voided payment.
   const byName = (name: string) => created.find((c) => c.person.name === name)!.id;

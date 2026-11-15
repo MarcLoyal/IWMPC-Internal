@@ -14,6 +14,9 @@ import { NO_ACTIVE_CONNECTION, startMembership, type MembershipDetails } from '.
 import { nextNumber } from '../services/numbering';
 import { getOwed } from '../services/payments';
 import { addMonths, isPeriod, periodOf } from '../lib/periods';
+import { fromDbDate } from '../lib/dates';
+import { saleItemJson } from '../lib/serialize';
+import { saleBalance } from '../services/sales';
 import { billJson, billState, unpaidBills, type BillStatus } from '../services/water';
 
 export const accountsRouter = Router();
@@ -257,6 +260,26 @@ accountsRouter.get(
     ]);
 
     const water = await waterSummaries(rows.map((r) => r.id), months, today);
+    // Each account's most recent Rice & LPG purchase.
+    const recentSales = rows.length
+      ? await prisma.sale.findMany({
+          where: { accountId: { in: rows.map((r) => r.id) }, status: 'ACTIVE' },
+          orderBy: [{ saleDate: 'desc' }, { id: 'desc' }],
+          distinct: ['accountId'],
+          include: { items: { orderBy: { id: 'asc' } } },
+        })
+      : [];
+    const lastPurchase = new Map(
+      recentSales.map((sale) => [
+        sale.accountId,
+        {
+          date: fromDbDate(sale.saleDate)!,
+          item: sale.items[0]?.productName ?? '',
+          moreItems: Math.max(0, sale.items.length - 1),
+          amount: sale.total.toFixed(2),
+        },
+      ]),
+    );
     const firstBill = await prisma.waterBill.findFirst({ orderBy: { period: 'asc' }, select: { period: true } });
     const members = typeGroups.find((g) => g.isMember)?._count ?? 0;
     const nonMembers = typeGroups.find((g) => !g.isMember)?._count ?? 0;
@@ -272,6 +295,7 @@ accountsRouter.get(
             ? 'PENDING'
             : 'NONE',
         water: water(r.id),
+        lastPurchase: lastPurchase.get(r.id) ?? null,
       })),
       offset,
       total,
@@ -325,11 +349,11 @@ accountsRouter.get(
     });
     if (!account) throw notFound('This account');
 
-    const [connections, payments, owed, bills] = await Promise.all([
+    const [connections, payments, owed, bills, sales] = await Promise.all([
       prisma.waterConnection.findMany({ where: { accountId: id }, orderBy: { id: 'asc' } }),
       prisma.payment.findMany({
         where: { accountId: id },
-        include: { createdBy: { select: { name: true } }, voidedBy: { select: { name: true } }, waterBill: { select: { period: true } } },
+        include: { createdBy: { select: { name: true } }, voidedBy: { select: { name: true } }, waterBill: { select: { period: true } }, sale: { include: { items: true } } },
         orderBy: [{ paymentDate: 'desc' }, { id: 'desc' }],
       }),
       getOwed(id),
@@ -338,7 +362,28 @@ accountsRouter.get(
         include: { payments: true, reading: true },
         orderBy: [{ period: 'desc' }, { id: 'desc' }],
       }),
+      prisma.sale.findMany({
+        where: { accountId: id },
+        include: { items: { orderBy: { id: 'asc' } }, payments: true },
+        orderBy: [{ saleDate: 'desc' }, { id: 'desc' }],
+      }),
     ]);
+    // The Rice & LPG tab: one row per item bought, newest first. Voided sales stay visible.
+    const purchases = sales.flatMap((sale) =>
+      sale.items.map((item) => ({
+        ...saleItemJson(item),
+        saleId: sale.id,
+        date: fromDbDate(sale.saleDate)!,
+        status: sale.status,
+        isCredit: sale.isCredit,
+        balance: sale.isCredit && sale.status === 'ACTIVE' ? saleBalance(sale).toFixed(2) : '0.00',
+        orNumbers: sale.payments.filter((p) => p.status === 'ACTIVE').map((p) => p.orNumber),
+      })),
+    );
+    const thisYear = todayManila().slice(0, 4);
+    const boughtThisYear = sales
+      .filter((sale) => sale.status === 'ACTIVE' && fromDbDate(sale.saleDate)!.startsWith(thisYear))
+      .reduce((sum, sale) => sum.plus(sale.total), new Prisma.Decimal(0));
     // The Water Bill summary card: everything still owed, and the worst status.
     const billRows = bills.map((b) => billJson(b));
     const unpaid = billRows.filter((b) => b.status !== 'PAID');
@@ -356,6 +401,15 @@ accountsRouter.get(
       connections: connections.map(connectionJson),
       payments: payments.map(paymentJson),
       bills: billRows,
+      purchases,
+      riceLpg: {
+        year: thisYear,
+        totalThisYear: boughtThisYear.toFixed(2),
+        creditBalance: sales
+          .filter((sale) => sale.isCredit && sale.status === 'ACTIVE')
+          .reduce((sum, sale) => sum.plus(saleBalance(sale)), new Prisma.Decimal(0))
+          .toFixed(2),
+      },
       water: {
         hasBills: billRows.length > 0,
         totalDue: waterDue.toFixed(2),

@@ -5,5 +5,6 @@ export const PAYMENT_TYPE_LABEL: Record<PaymentType, string> = {
   INSTALLATION_FEE: 'Installation Fee',
   MEMBERSHIP_FEE: 'Membership Fee',
   SHARE_CAPITAL: 'Share Capital',
+  RICE_LPG: 'Rice & LPG',
   OTHER: 'Other',
 };

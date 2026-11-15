@@ -54,6 +54,7 @@ const settingsSchema = z
     water_penalty_type: z.enum(['PERCENT', 'FIXED'], { errorMap: () => ({ message: 'Please choose the kind of late penalty.' }) }),
     water_penalty_value: money('late penalty'),
     water_disconnect_months: wholeNumber('the number of unpaid months', 1, 24),
+    allow_credit: z.enum(['true', 'false'], { errorMap: () => ({ message: 'Please choose Yes or No for credit sales.' }) }),
     account_no_prefix: text(10),
     account_no_padding: wholeNumber('the number of digits', 1, 10),
     account_no_next: wholeNumber('the next account number', 1, 999999999),
