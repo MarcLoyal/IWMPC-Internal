@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { api, errorMessage } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import { formatDateTime, peso } from '../lib/format';
-import type { PriceChange, Product, ProductUnit } from '../lib/types';
+import { KIND_LABEL, type PriceChange, type Product, type ProductKind, type ProductUnit } from '../lib/types';
 import { useLoad } from '../lib/useLoad';
 import { Badge, Button, Card, Field, Loading, Modal, Notice, PageHeader } from '../components/ui';
 
@@ -67,6 +67,24 @@ export function Products() {
             <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 px-5 py-3">
               <h2 className="flex items-center gap-3 text-xl font-bold">
                 {product.name}
+                {admin ? (
+                  <select
+                    aria-label={`Kind of product for ${product.name}`}
+                    className="rounded border border-slate-300 bg-white px-2 py-1 text-sm font-semibold"
+                    value={product.category}
+                    onChange={(e) => toggle(() => api.put(`/products/${product.id}`, { name: product.name, active: product.active, category: e.target.value }))}
+                  >
+                    {(Object.keys(KIND_LABEL) as ProductKind[]).map((k) => (
+                      <option key={k} value={k}>
+                        {KIND_LABEL[k]}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <Badge tone="blue" small>
+                    {KIND_LABEL[product.category]}
+                  </Badge>
+                )}
                 {!product.active && <Badge tone="gray">Not sold</Badge>}
               </h2>
               <div className="flex flex-wrap gap-2">
@@ -206,6 +224,7 @@ function PriceDialog({ product, unit, onClose, onDone }: { product: Product; uni
 /** Adds a new product (with its first unit), or another unit to a product. */
 function ItemDialog({ product, onClose, onDone }: { product: Product | null; onClose: () => void; onDone: () => void }) {
   const [name, setName] = useState('');
+  const [kind, setKind] = useState<ProductKind | ''>('');
   const [label, setLabel] = useState('');
   const [price, setPrice] = useState('');
   const [memberPrice, setMemberPrice] = useState('');
@@ -217,7 +236,7 @@ function ItemDialog({ product, onClose, onDone }: { product: Product | null; onC
     setError('');
     try {
       if (product) await api.post(`/products/${product.id}/units`, { label, price, memberPrice });
-      else await api.post('/products', { name, label, price, memberPrice });
+      else await api.post('/products', { name, category: kind || undefined, label, price, memberPrice });
       onDone();
     } catch (err) {
       setError(errorMessage(err));
@@ -244,6 +263,16 @@ function ItemDialog({ product, onClose, onDone }: { product: Product | null; onC
         {!product && (
           <Field label="Product name" className="sm:col-span-2">
             <input className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Jasmine" autoFocus />
+          </Field>
+        )}
+        {!product && (
+          <Field label="Kind" hint="Used to group sales in reports." className="sm:col-span-2">
+            <select className="input" value={kind} onChange={(e) => setKind(e.target.value as ProductKind)}>
+              <option value="">Choose…</option>
+              <option value="RICE">Rice</option>
+              <option value="LPG">LPG</option>
+              <option value="OTHER">Other</option>
+            </select>
           </Field>
         )}
         <Field label="Unit (how it is sold)" hint='e.g. "per kilo", "per sack (50 kg)", "per 11 kg tank"' className="sm:col-span-2">

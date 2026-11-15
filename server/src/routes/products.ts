@@ -28,7 +28,7 @@ function unitJson(u: UnitRow) {
 }
 
 function productJson(p: Prisma.ProductGetPayload<{ include: { units: true } }>) {
-  return { id: p.id, name: p.name, active: p.active, units: p.units.map(unitJson) };
+  return { id: p.id, name: p.name, category: p.category, active: p.active, units: p.units.map(unitJson) };
 }
 
 const include = { units: { orderBy: [{ sortOrder: 'asc' as const }, { id: 'asc' as const }] } };
@@ -73,6 +73,7 @@ productsRouter.get(
   }),
 );
 
+const category = z.enum(['RICE', 'LPG', 'OTHER'], { errorMap: () => ({ message: 'Please choose the kind: Rice, LPG or Other.' }) });
 const name = z.string({ required_error: 'Please type the product name.' }).trim().min(1, 'Please type the product name.').max(60);
 const label = z
   .string({ required_error: 'Please type the unit, for example "per kilo".' })
@@ -135,13 +136,14 @@ productsRouter.post(
   '/',
   allow('ADMIN'),
   wrap(async (req, res) => {
-    const data = z.object({ name, ...unitFields }).parse(req.body);
+    const data = z.object({ name, category, ...unitFields }).parse(req.body);
     await assertNameFree(data.name);
     const product = await prisma.$transaction(async (tx) => {
       const last = await tx.product.aggregate({ _max: { sortOrder: true } });
       const created = await tx.product.create({
         data: {
           name: data.name,
+          category: data.category,
           sortOrder: (last._max.sortOrder ?? -1) + 1,
           units: { create: [{ label: data.label, price: data.price, memberPrice: data.memberPrice }] },
         },
@@ -161,7 +163,7 @@ productsRouter.put(
   allow('ADMIN'),
   wrap(async (req, res) => {
     const id = idParam(req.params.id, 'This product');
-    const data = z.object({ name, active: z.boolean() }).parse(req.body);
+    const data = z.object({ name, active: z.boolean(), category: category.optional() }).parse(req.body);
     const before = await prisma.product.findUnique({ where: { id } });
     if (!before) throw notFound('This product');
     await assertNameFree(data.name, id);

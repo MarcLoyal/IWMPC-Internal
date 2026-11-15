@@ -15,15 +15,15 @@ let u: Units;
 
 async function products(): Promise<Units> {
   const dinorado = await prisma.product.create({
-    data: { name: 'Dinorado', sortOrder: 0, units: { create: [{ label: 'per kilo', price: 65, sortOrder: 0 }, { label: 'per sack (25 kg)', price: 1550, sortOrder: 1 }] } },
+    data: { name: 'Dinorado', category: 'RICE', sortOrder: 0, units: { create: [{ label: 'per kilo', price: 65, sortOrder: 0 }, { label: 'per sack (25 kg)', price: 1550, sortOrder: 1 }] } },
     include: { units: { orderBy: { id: 'asc' } } },
   });
   const sinandomeng = await prisma.product.create({
-    data: { name: 'Sinandomeng', sortOrder: 1, units: { create: [{ label: 'per kilo', price: 52 }] } },
+    data: { name: 'Sinandomeng', category: 'RICE', sortOrder: 1, units: { create: [{ label: 'per kilo', price: 52 }] } },
     include: { units: true },
   });
   const lpg = await prisma.product.create({
-    data: { name: 'LPG', sortOrder: 2, units: { create: [{ label: 'per 11 kg tank (refill)', price: 950 }] } },
+    data: { name: 'LPG', category: 'LPG', sortOrder: 2, units: { create: [{ label: 'per 11 kg tank (refill)', price: 950 }] } },
     include: { units: true },
   });
   return { dinoKilo: dinorado.units[0].id, dinoSack: dinorado.units[1].id, sinanKilo: sinandomeng.units[0].id, lpg: lpg.units[0].id, dinoradoId: dinorado.id };
@@ -48,7 +48,7 @@ describe('prices are Admin only', () => {
       const user = await loginAs(role);
       const attempts = [
         user.post(`/api/products/units/${u.lpg}/price`).send({ price: '1', reason: 'cheaper' }),
-        user.post('/api/products').send({ name: 'Jasmine', label: 'per kilo', price: '70' }),
+        user.post('/api/products').send({ name: 'Jasmine', category: 'RICE', label: 'per kilo', price: '70' }),
         user.put(`/api/products/${u.dinoradoId}`).send({ name: 'Dinorado', active: false }),
         user.post(`/api/products/${u.dinoradoId}/units`).send({ label: 'per sack (50 kg)', price: '3000' }),
         user.put(`/api/products/units/${u.lpg}`).send({ label: 'free', active: true }),
@@ -90,9 +90,11 @@ describe('prices are Admin only', () => {
 
   it('lets an Admin add a product and a unit without any code change', async () => {
     const admin = await loginAs('ADMIN');
-    const created = await admin.post('/api/products').send({ name: 'Jasmine', label: 'per kilo', price: '70' });
+    expect((await admin.post('/api/products').send({ name: 'Jasmine', label: 'per kilo', price: '70' })).body.error).toMatch(/kind/);
+    const created = await admin.post('/api/products').send({ name: 'Jasmine', category: 'RICE', label: 'per kilo', price: '70' });
     expect(created.status).toBe(201);
-    expect((await admin.post('/api/products').send({ name: 'jasmine', label: 'per kilo', price: '70' })).status).toBe(409);
+    expect(created.body.category).toBe('RICE');
+    expect((await admin.post('/api/products').send({ name: 'jasmine', category: 'RICE', label: 'per kilo', price: '70' })).status).toBe(409);
     expect((await admin.post(`/api/products/${created.body.id}/units`).send({ label: 'per sack (50 kg)', price: '3,300', memberPrice: '3250' })).status).toBe(201);
     expect((await admin.post(`/api/products/${created.body.id}/units`).send({ label: 'Per Kilo', price: '1' })).status).toBe(409);
 
@@ -132,7 +134,8 @@ describe('selling at the Cashier', () => {
     // On the Rice & LPG tab and in All Transactions.
     expect(profile.body.purchases).toHaveLength(3);
     expect(profile.body.purchases[0]).toMatchObject({ date: todayManila(), status: 'ACTIVE', orNumbers: ['5001'] });
-    expect(profile.body.riceLpg).toMatchObject({ totalThisYear: '2630.00', creditBalance: '0.00' });
+    expect(profile.body.riceLpg).toMatchObject({ totalThisYear: '2630.00', riceThisYear: '1680.00', lpgThisYear: '950.00', creditBalance: '0.00' });
+    expect(profile.body.purchases.map((p: { category: string }) => p.category)).toEqual(['RICE', 'LPG', 'RICE']);
     expect(profile.body.payments).toMatchObject([{ type: 'RICE_LPG', orNumber: '5001', amount: '2630.00' }]);
     expect(profile.body.payments[0].items).toHaveLength(3);
 
@@ -302,6 +305,14 @@ describe('Rice & LPG Sales report', () => {
     ]);
     expect(report.body).toMatchObject({ total: '1437.50', saleCount: 2, creditTotal: '0.00' });
     expect(report.body.lines.map((l: { buyer: string }) => l.buyer)).toEqual(['Juan Dela Cruz', 'Juan Dela Cruz', 'Aling Nena']);
+
+    expect(report.body.totalsByKind).toEqual({ RICE: '487.50', LPG: '950.00' });
+    // "All rice" and "LPG" filters.
+    const rice = await board.get('/api/sales/report').query({ category: 'RICE' });
+    expect(rice.body.total).toBe('487.50');
+    expect(rice.body.lines.every((l: { category: string }) => l.category === 'RICE')).toBe(true);
+    const lpgOnly = await board.get('/api/sales/report').query({ category: 'LPG' });
+    expect(lpgOnly.body.summary).toEqual([{ product: 'LPG', unit: 'per 11 kg tank (refill)', quantity: '1', amount: '950.00', sales: 1 }]);
 
     const onlyDinorado = await board.get('/api/sales/report').query({ productId: u.dinoradoId });
     expect(onlyDinorado.body.total).toBe('487.50');

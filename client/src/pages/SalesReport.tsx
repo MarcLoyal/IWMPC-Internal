@@ -1,14 +1,15 @@
 import { Link, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../lib/auth';
 import { formatDate, formatDateTime, peso } from '../lib/format';
-import type { SaleLine } from '../lib/types';
+import { KIND_LABEL, type ProductKind, type SaleLine } from '../lib/types';
 import { useLoad } from '../lib/useLoad';
 import { Badge, Card, Field, LinkButton, Loading, Notice, PageHeader, PrintButton } from '../components/ui';
 
 interface Report {
   from: string;
   to: string;
-  products: { id: number; name: string }[];
+  products: { id: number; name: string; category: ProductKind }[];
+  totalsByKind: Partial<Record<ProductKind, string>>;
   coop: { name: string; address: string; cdaNo: string };
   summary: { product: string; unit: string; quantity: string; amount: string; sales: number }[];
   total: string;
@@ -22,7 +23,7 @@ export function SalesReport() {
   const { user } = useAuth();
   const [params, setParams] = useSearchParams();
   const query = new URLSearchParams();
-  for (const key of ['from', 'to', 'productId']) if (params.get(key)) query.set(key, params.get(key)!);
+  for (const key of ['from', 'to', 'productId', 'category']) if (params.get(key)) query.set(key, params.get(key)!);
   const { data, error, loading } = useLoad<Report>(`/sales/report?${query}`);
 
   function setFilter(key: string, value: string) {
@@ -31,6 +32,18 @@ export function SalesReport() {
     else next.delete(key);
     setParams(next, { replace: true });
   }
+
+  // One dropdown: all products, all rice, LPG, or a single product.
+  const showing = params.get('productId') ? `p${params.get('productId')}` : params.get('category') ? `k${params.get('category')}` : '';
+  function setShowing(value: string) {
+    const next = new URLSearchParams(params);
+    next.delete('productId');
+    next.delete('category');
+    if (value.startsWith('p')) next.set('productId', value.slice(1));
+    if (value.startsWith('k')) next.set('category', value.slice(1));
+    setParams(next, { replace: true });
+  }
+  const kinds = (['RICE', 'LPG', 'OTHER'] as ProductKind[]).filter((k) => data?.products.some((p) => p.category === k));
 
   return (
     <>
@@ -57,12 +70,21 @@ export function SalesReport() {
             <input className="input py-2" type="date" value={params.get('to') ?? data?.to ?? ''} onChange={(e) => setFilter('to', e.target.value)} />
           </Field>
           <Field label="Product">
-            <select className="input py-2" value={params.get('productId') ?? ''} onChange={(e) => setFilter('productId', e.target.value)}>
-              <option value="">All products</option>
-              {data?.products.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name}
-                </option>
+            <select className="input py-2" value={showing} onChange={(e) => setShowing(e.target.value)}>
+              <option value="">All products (Rice and LPG)</option>
+              {kinds.includes('RICE') && <option value="kRICE">Rice only (all kinds of rice)</option>}
+              {kinds.includes('LPG') && <option value="kLPG">LPG only</option>}
+              {kinds.includes('OTHER') && <option value="kOTHER">Other products only</option>}
+              {kinds.map((k) => (
+                <optgroup key={k} label={`One ${KIND_LABEL[k] === 'Other' ? 'other product' : KIND_LABEL[k] === 'Rice' ? 'kind of rice' : 'LPG product'}`}>
+                  {data?.products
+                    .filter((p) => p.category === k)
+                    .map((p) => (
+                      <option key={p.id} value={`p${p.id}`}>
+                        {p.name}
+                      </option>
+                    ))}
+                </optgroup>
               ))}
             </select>
           </Field>
@@ -81,6 +103,18 @@ export function SalesReport() {
                 {data.saleCount} {data.saleCount === 1 ? 'sale' : 'sales'}
                 {Number(data.creditTotal) > 0 && ` · ${peso(data.creditTotal)} of this was on credit`}
               </div>
+              {Object.keys(data.totalsByKind).length > 1 && (
+                <dl className="mt-3 space-y-0.5 border-t border-slate-200 pt-2">
+                  {(['RICE', 'LPG', 'OTHER'] as ProductKind[])
+                    .filter((k) => data.totalsByKind[k])
+                    .map((k) => (
+                      <div key={k} className="flex justify-between gap-4">
+                        <dt className="font-semibold text-slate-700">{KIND_LABEL[k]}</dt>
+                        <dd className="font-bold tabular-nums">{peso(data.totalsByKind[k]!)}</dd>
+                      </div>
+                    ))}
+                </dl>
+              )}
               <div className="mt-1 text-sm text-slate-500">Voided sales are not counted.</div>
             </Card>
             <Card className="avoid-break">

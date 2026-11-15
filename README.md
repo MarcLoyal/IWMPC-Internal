@@ -63,7 +63,7 @@ own price) is available as an option when changing rates.
 
 ## What is in Phase 2 (Rice & LPG)
 
-- **Products and prices** (Settings → Rice & LPG Prices): products such as Dinorado, Sinandomeng and LPG,
+- **Products and prices** (Settings → Rice & LPG Prices): products such as Dinorado, Sinandomeng and LPG, each marked as Rice, LPG or Other,
   each with one or more units (per kilo, per sack (25 kg), per 11 kg tank) and a price. An optional member
   price applies to members only. New products and units are added on screen, with no code change.
 - **Prices are Admin only.** Every route that changes a product, a price, a water rate or a setting

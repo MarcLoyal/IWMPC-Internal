@@ -73,15 +73,17 @@ salesRouter.get(
     if (!isDateString(from) || !isDateString(to)) throw new AppError(400, 'Please choose valid dates.');
     if (from > to) throw new AppError(400, 'The "from" date must be on or before the "to" date.');
     const productId = Number(req.query.productId) || null;
+    // "All rice", "LPG": every product of that kind.
+    const kind = req.query.category === 'RICE' || req.query.category === 'LPG' || req.query.category === 'OTHER' ? req.query.category : null;
 
     const [items, products, settings] = await Promise.all([
       prisma.saleItem.findMany({
         where: {
           sale: { status: 'ACTIVE', saleDate: { gte: toDbDate(from), lte: toDbDate(to) } },
-          unit: productId ? { productId } : undefined,
+          unit: productId ? { productId } : kind ? { product: { category: kind } } : undefined,
         },
         include: {
-          unit: { select: { productId: true } },
+          unit: { select: { productId: true, product: { select: { category: true } } } },
           sale: {
             include: {
               account: { select: { id: true, fullName: true } },
@@ -100,6 +102,7 @@ salesRouter.get(
     const groups = new Map<string, { productId: number; product: string; unit: string; quantity: Prisma.Decimal; amount: Prisma.Decimal; sales: Set<number> }>();
     let total = zero;
     let credit = zero;
+    const byKind: Record<string, Prisma.Decimal> = {};
     for (const item of items) {
       const key = `${item.productName}|${item.unitLabel}`;
       const g = groups.get(key) ?? { productId: item.unit.productId, product: item.productName, unit: item.unitLabel, quantity: zero, amount: zero, sales: new Set<number>() };
@@ -108,6 +111,7 @@ salesRouter.get(
       g.sales.add(item.saleId);
       groups.set(key, g);
       total = total.plus(item.amount);
+      byKind[item.unit.product.category] = (byKind[item.unit.product.category] ?? zero).plus(item.amount);
       if (item.sale.isCredit) credit = credit.plus(item.amount);
     }
     const order = new Map(products.map((p, i) => [p.id, i]));
@@ -115,7 +119,8 @@ salesRouter.get(
     res.json({
       from,
       to,
-      products: products.map((p) => ({ id: p.id, name: p.name })),
+      products: products.map((p) => ({ id: p.id, name: p.name, category: p.category })),
+      totalsByKind: Object.fromEntries(Object.entries(byKind).map(([k, v]) => [k, v.toFixed(2)])),
       coop: { name: settings.coop_name, address: settings.coop_address, cdaNo: settings.coop_cda_no },
       summary: [...groups.values()]
         .sort((a, b) => (order.get(a.productId) ?? 0) - (order.get(b.productId) ?? 0) || a.unit.localeCompare(b.unit))
@@ -131,6 +136,7 @@ salesRouter.get(
       saleCount: new Set(items.map((i) => i.saleId)).size,
       lines: items.map((i) => ({
         ...saleItemJson(i),
+        category: i.unit.product.category,
         saleId: i.saleId,
         date: fromDbDate(i.sale.saleDate)!,
         accountId: i.sale.accountId,

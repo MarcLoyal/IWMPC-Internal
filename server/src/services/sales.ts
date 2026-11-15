@@ -214,17 +214,20 @@ export async function unpaidCreditSales(db: Db, accountId: number) {
 }
 
 /** Default products, added once when there are none. Prices start at zero until an Admin sets them. */
-export const DEFAULT_PRODUCTS: { name: string; units: string[] }[] = [
-  { name: 'Dinorado', units: ['per kilo', 'per sack (25 kg)'] },
-  { name: 'Sinandomeng', units: ['per kilo', 'per sack (25 kg)'] },
-  { name: 'LPG', units: ['per 11 kg tank (refill)'] },
+export type Category = 'RICE' | 'LPG' | 'OTHER';
+export const CATEGORIES: Category[] = ['RICE', 'LPG', 'OTHER'];
+
+export const DEFAULT_PRODUCTS: { name: string; category: Category; units: string[] }[] = [
+  { name: 'Dinorado', category: 'RICE', units: ['per kilo', 'per sack (25 kg)'] },
+  { name: 'Sinandomeng', category: 'RICE', units: ['per kilo', 'per sack (25 kg)'] },
+  { name: 'LPG', category: 'LPG', units: ['per 11 kg tank (refill)'] },
 ];
 
 export async function ensureDefaultProducts(db: Db) {
   if ((await db.product.count()) > 0) return;
   for (const [i, p] of DEFAULT_PRODUCTS.entries()) {
     await db.product.create({
-      data: { name: p.name, sortOrder: i, units: { create: p.units.map((label, j) => ({ label, price: 0, sortOrder: j })) } },
+      data: { name: p.name, category: p.category, sortOrder: i, units: { create: p.units.map((label, j) => ({ label, price: 0, sortOrder: j })) } },
     });
   }
 }

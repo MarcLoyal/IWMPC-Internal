@@ -157,6 +157,21 @@ export function AccountProfile() {
           <div className="text-sm font-semibold uppercase tracking-wide text-slate-500">Rice &amp; LPG</div>
           <div className="mt-1 text-3xl font-bold tabular-nums">{peso(riceLpg.totalThisYear)}</div>
           <div className="mt-1 text-slate-600">Bought in {riceLpg.year}</div>
+          {Number(riceLpg.totalThisYear) > 0 && (
+            <div className="mt-1 flex flex-wrap gap-x-4 text-slate-700">
+              <span>
+                Rice <strong className="tabular-nums">{peso(riceLpg.riceThisYear)}</strong>
+              </span>
+              <span>
+                LPG <strong className="tabular-nums">{peso(riceLpg.lpgThisYear)}</strong>
+              </span>
+              {Number(riceLpg.otherThisYear) > 0 && (
+                <span>
+                  Other <strong className="tabular-nums">{peso(riceLpg.otherThisYear)}</strong>
+                </span>
+              )}
+            </div>
+          )}
           {Number(riceLpg.creditBalance) > 0 && (
             <div className="mt-1">
               <Badge tone="yellow">Unpaid credit: {peso(riceLpg.creditBalance)}</Badge>

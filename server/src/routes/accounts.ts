@@ -364,7 +364,7 @@ accountsRouter.get(
       }),
       prisma.sale.findMany({
         where: { accountId: id },
-        include: { items: { orderBy: { id: 'asc' } }, payments: true },
+        include: { items: { orderBy: { id: 'asc' }, include: { unit: { select: { product: { select: { category: true } } } } } }, payments: true },
         orderBy: [{ saleDate: 'desc' }, { id: 'desc' }],
       }),
     ]);
@@ -372,6 +372,7 @@ accountsRouter.get(
     const purchases = sales.flatMap((sale) =>
       sale.items.map((item) => ({
         ...saleItemJson(item),
+        category: item.unit.product.category,
         saleId: sale.id,
         date: fromDbDate(sale.saleDate)!,
         status: sale.status,
@@ -381,6 +382,11 @@ accountsRouter.get(
       })),
     );
     const thisYear = todayManila().slice(0, 4);
+    const kindThisYear = (kind: string) =>
+      purchases
+        .filter((p) => p.status === 'ACTIVE' && p.category === kind && p.date.startsWith(thisYear))
+        .reduce((sum, p) => sum.plus(p.amount), new Prisma.Decimal(0))
+        .toFixed(2);
     const boughtThisYear = sales
       .filter((sale) => sale.status === 'ACTIVE' && fromDbDate(sale.saleDate)!.startsWith(thisYear))
       .reduce((sum, sale) => sum.plus(sale.total), new Prisma.Decimal(0));
@@ -405,6 +411,9 @@ accountsRouter.get(
       riceLpg: {
         year: thisYear,
         totalThisYear: boughtThisYear.toFixed(2),
+        riceThisYear: kindThisYear('RICE'),
+        lpgThisYear: kindThisYear('LPG'),
+        otherThisYear: kindThisYear('OTHER'),
         creditBalance: sales
           .filter((sale) => sale.isCredit && sale.status === 'ACTIVE')
           .reduce((sum, sale) => sum.plus(saleBalance(sale)), new Prisma.Decimal(0))

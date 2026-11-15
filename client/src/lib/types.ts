@@ -51,9 +51,14 @@ export interface ProductUnit {
   active: boolean;
 }
 
+export type ProductKind = 'RICE' | 'LPG' | 'OTHER';
+
+export const KIND_LABEL: Record<ProductKind, string> = { RICE: 'Rice', LPG: 'LPG', OTHER: 'Other' };
+
 export interface Product {
   id: number;
   name: string;
+  category: ProductKind;
   active: boolean;
   units: ProductUnit[];
 }
@@ -68,6 +73,7 @@ export interface SaleLine {
 }
 
 export interface Purchase extends SaleLine {
+  category: ProductKind;
   saleId: number;
   date: string;
   status: 'ACTIVE' | 'VOID';
@@ -209,7 +215,7 @@ export interface AccountProfile {
   payments: Payment[];
   bills: WaterBill[];
   purchases: Purchase[];
-  riceLpg: { year: string; totalThisYear: string; creditBalance: string };
+  riceLpg: { year: string; totalThisYear: string; riceThisYear: string; lpgThisYear: string; otherThisYear: string; creditBalance: string };
   water: { hasBills: boolean; totalDue: string; status: BillStatus; nextDueDate: string | null; unpaidMonths: number };
   owed: OwedItem[];
   warnings: string[];

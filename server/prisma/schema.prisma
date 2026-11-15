@@ -266,6 +266,8 @@ model WaterBill {
 model Product {
   id        Int      @id @default(autoincrement())
   name      String   @unique
+  // RICE, LPG or OTHER. Used to group sales in reports and on the account.
+  category  String   @default("RICE")
   sortOrder Int      @default(0) @map("sort_order")
   active    Boolean  @default(true)
   createdAt DateTime @default(now()) @map("created_at")
