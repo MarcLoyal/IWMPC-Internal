@@ -86,18 +86,43 @@ export function PaymentDetails({
         </Detail>
         <Detail label="Recorded by">{payment.createdBy}</Detail>
         {payment.accountName && (
-          <Detail label="Account">
-            <Link to={`/accounts/${payment.accountId}`} className="font-semibold text-brand-700 hover:underline" onClick={onClose}>
-              {payment.accountName}
-            </Link>{' '}
-            <span className="text-slate-500">({payment.accountNumber})</span>
+          <Detail label={payment.accountId ? 'Account' : 'Buyer'}>
+            {payment.accountId ? (
+              <>
+                <Link to={`/accounts/${payment.accountId}`} className="font-semibold text-brand-700 hover:underline" onClick={onClose}>
+                  {payment.accountName}
+                </Link>{' '}
+                <span className="text-slate-500">({payment.accountNumber})</span>
+              </>
+            ) : (
+              <>
+                {payment.accountName} <span className="text-slate-500">(walk-in, no account)</span>
+              </>
+            )}
           </Detail>
         )}
         <Detail label="Recorded on">{formatDateTime(payment.createdAt)}</Detail>
-        {payment.description && (
+        {payment.items && payment.items.length > 0 ? (
           <div className="col-span-2">
-            <Detail label="Description">{payment.description}</Detail>
+            <Detail label="Items">
+              <ul className="divide-y divide-slate-100 rounded-lg border border-slate-200">
+                {payment.items.map((item, i) => (
+                  <li key={i} className="flex items-baseline justify-between gap-3 px-3 py-2">
+                    <span>
+                      <strong>{item.productName}</strong> · {item.quantity} × {item.unitLabel} at {peso(item.unitPrice)}
+                    </span>
+                    <span className="font-semibold tabular-nums">{peso(item.amount)}</span>
+                  </li>
+                ))}
+              </ul>
+            </Detail>
           </div>
+        ) : (
+          payment.description && (
+            <div className="col-span-2">
+              <Detail label="Description">{payment.description}</Detail>
+            </div>
+          )
         )}
       </dl>
 
@@ -116,6 +141,7 @@ export function PaymentDetails({
           <p className="mb-3 font-semibold text-red-900">
             Voiding cancels this payment. It stays in the records marked VOID, with its OR number.
             {payment.type === 'MEMBERSHIP_FEE' && ' The account will go back to Non-member.'}
+            {payment.type === 'RICE_LPG' && ' For a Rice & LPG sale, every item in the sale is voided with it.'}
           </p>
           <Field label="Reason for voiding (required)">
             <textarea className="input" rows={2} value={reason} onChange={(e) => setReason(e.target.value)} autoFocus />

@@ -1,4 +1,4 @@
-import type { Account, Area, Beneficiary, Payment, User, WaterConnection } from '@prisma/client';
+import type { Account, Area, Beneficiary, Payment, Sale, SaleItem, User, WaterConnection } from '@prisma/client';
 import { fromDbDate } from './dates';
 
 export function accountRow(a: Account & { area: Area }) {
@@ -70,13 +70,28 @@ type PaymentWithPeople = Payment & {
   voidedBy?: Pick<User, 'name'> | null;
   account?: Pick<Account, 'id' | 'fullName' | 'accountNumber'> | null;
   waterBill?: { period: string } | null;
+  sale?: (Sale & { items: SaleItem[] }) | null;
 };
+
+export function saleItemJson(i: SaleItem) {
+  return {
+    productName: i.productName,
+    unitLabel: i.unitLabel,
+    quantity: i.quantity.toDecimalPlaces(2).toString(),
+    unitPrice: i.unitPrice.toFixed(2),
+    amount: i.amount.toFixed(2),
+  };
+}
 
 export function paymentJson(p: PaymentWithPeople) {
   return {
     id: p.id,
     accountId: p.accountId,
-    accountName: p.account?.fullName,
+    // A walk-in Rice & LPG sale has no account.
+    accountName: p.account?.fullName ?? (p.accountId === null ? p.sale?.walkInName || 'Walk-in customer' : undefined),
+    walkIn: p.accountId === null,
+    saleId: p.saleId,
+    items: p.sale?.items.map(saleItemJson) ?? [],
     accountNumber: p.account?.accountNumber,
     type: p.type,
     amount: p.amount.toFixed(2),

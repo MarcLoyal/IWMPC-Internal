@@ -8,6 +8,7 @@ import { getSettings } from './settings';
 import { assertCanPayMembershipFee, completeMembership, revokeMembership } from './membership';
 import { periodLabel } from '../lib/periods';
 import { billForPayment, billState, refreshBillSettled, unpaidBills } from './water';
+import { itemsSummary, onSalePaymentVoided, orAlreadyUsed, refreshSaleSettled, saleForPayment, unpaidCreditSales } from './sales';
 
 export interface NewPayment {
   accountId: number;
@@ -17,22 +18,11 @@ export interface NewPayment {
   description: string;
   /** For Water Bill payments: the bill being paid. Empty = the oldest unpaid bill. */
   waterBillId?: number | null;
+  /** For Rice & LPG: the earlier credit sale being paid. (A new sale is saved through createSale.) */
+  saleId?: number | null;
 }
 
-async function duplicateOrError(db: Prisma.TransactionClient | typeof prisma, orNumber: string) {
-  const existing = await db.payment.findUnique({
-    where: { orNumber },
-    include: { account: { select: { fullName: true } } },
-  });
-  if (!existing) return new AppError(409, `OR number ${orNumber} was already used.`);
-  const voided = existing.status === 'VOID' ? ' (that payment was voided)' : '';
-  return new AppError(
-    409,
-    `OR number ${orNumber} was already used for ${existing.account.fullName} on ${formatDate(
-      fromDbDate(existing.paymentDate)!,
-    )}${voided}. Please check the receipt booklet.`,
-  );
-}
+const duplicateOrError = orAlreadyUsed;
 
 export async function recordPayment(input: NewPayment, userId: number) {
   const orNumber = normalizeOr(input.orNumber);
@@ -58,6 +48,10 @@ export async function recordPayment(input: NewPayment, userId: number) {
 
       let connectionId: number | null = null;
       let waterBillId: number | null = null;
+      let saleId: number | null = null;
+      if (input.type === 'RICE_LPG') {
+        saleId = (await saleForPayment(tx, account.id, input.saleId ?? null, input.amount)).id;
+      }
       if (input.type === 'WATER_BILL') {
         const bill = await billForPayment(tx, account.id, input.waterBillId ?? null, input.amount);
         waterBillId = bill.id;
@@ -89,6 +83,7 @@ export async function recordPayment(input: NewPayment, userId: number) {
           paymentDate: toDbDate(paymentDate),
           connectionId,
           waterBillId,
+          saleId,
           description: input.description.trim(),
           createdById: userId,
         },
@@ -99,6 +94,7 @@ export async function recordPayment(input: NewPayment, userId: number) {
         await completeMembership(tx, account.id, paymentDate, userId);
       }
       if (waterBillId) await refreshBillSettled(tx, waterBillId);
+      if (saleId) await refreshSaleSettled(tx, saleId);
       return payment;
     });
   } catch (err) {
@@ -124,9 +120,11 @@ export async function voidPayment(paymentId: number, reason: string, userId: num
     });
     await audit(tx, userId, 'payment.void', 'payment', paymentId, payment, updated);
 
-    if (payment.type === 'MEMBERSHIP_FEE') {
+    if (payment.type === 'MEMBERSHIP_FEE' && payment.accountId) {
       await revokeMembership(tx, payment.accountId, userId);
     }
+    // A cash Rice & LPG sale is voided with its payment; a credit sale goes back to unpaid.
+    if (payment.saleId) await onSalePaymentVoided(tx, payment.saleId, reason.trim(), userId);
     // The water bill goes back to unpaid.
     if (payment.waterBillId) await refreshBillSettled(tx, payment.waterBillId);
     return updated;
@@ -138,15 +136,17 @@ export interface OwedItem {
   label: string;
   amount: string;
   waterBillId?: number;
+  saleId?: number;
   status?: string;
 }
 
 /** What the account still owes, shown on the Cashier screen. Water bills and loans join in 1B/1C. */
 export async function getOwed(accountId: number): Promise<OwedItem[]> {
-  const [account, settings, bills, unpaidInstallations] = await Promise.all([
+  const [account, settings, bills, creditSales, unpaidInstallations] = await Promise.all([
     prisma.account.findUnique({ where: { id: accountId } }),
     getSettings(prisma),
     unpaidBills(prisma, { connection: { accountId } }),
+    unpaidCreditSales(prisma, accountId),
     prisma.waterConnection.findMany({
       where: {
         accountId,
@@ -176,6 +176,14 @@ export async function getOwed(accountId: number): Promise<OwedItem[]> {
       type: 'INSTALLATION_FEE',
       label: c.meterSerial ? `Installation Fee (water meter ${c.meterSerial})` : 'Installation Fee',
       amount: new Prisma.Decimal(settings.installation_fee).toFixed(2),
+    });
+  }
+  for (const { sale, balance } of creditSales) {
+    owed.push({
+      type: 'RICE_LPG',
+      label: `Rice & LPG on credit, ${formatDate(fromDbDate(sale.saleDate)!)} (${itemsSummary(sale.items)})`,
+      amount: balance.toFixed(2),
+      saleId: sale.id,
     });
   }
   if (account.membershipStatus === 'PENDING') {

@@ -372,6 +372,7 @@ describe('changing the rates', () => {
     effectiveFrom: NEXT,
     minimumCharge: '100',
     minimumCoversM3: 5,
+    note: 'Board resolution',
     tiers: [
       { upTo: 10, rate: '25' },
       { upTo: null, rate: '30' },

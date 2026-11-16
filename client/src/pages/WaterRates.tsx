@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { api, errorMessage } from '../lib/api';
-import { peso } from '../lib/format';
+import { formatDate, peso } from '../lib/format';
 import type { RateClass, RateSchedule } from '../lib/types';
 import { useLoad } from '../lib/useLoad';
 import { blockLabels, currentPeriod, periodLabel } from '../lib/water';
@@ -34,6 +34,17 @@ function RateTable({ rates }: { rates: RateSchedule }) {
         ))}
       </tbody>
     </table>
+  );
+}
+
+/** Who set these rates, when, and why. */
+function WhoChanged({ rates }: { rates: RateSchedule }) {
+  if (!rates.changedBy && !rates.note) return null;
+  return (
+    <p className="mb-2 text-sm text-slate-600">
+      {rates.changedBy && rates.changedAt && <>Set by {rates.changedBy} on {formatDate(rates.changedAt)}. </>}
+      {rates.note && <>Reason: {rates.note}</>}
+    </p>
   );
 }
 
@@ -89,6 +100,7 @@ export function WaterRates() {
                   <div className="mb-2 flex items-center gap-2 font-bold">
                     <Badge tone="yellow">Coming</Badge> New rates starting {periodLabel(v.effectiveFrom)}
                   </div>
+                  <WhoChanged rates={v} />
                   <RateTable rates={v} />
                 </div>
               ))}
@@ -98,6 +110,7 @@ export function WaterRates() {
                   {past.map((v) => (
                     <div key={v.id} className="mt-3 border-t border-slate-200 pt-3">
                       <div className="mb-1 font-semibold">From {periodLabel(v.effectiveFrom)}</div>
+                      <WhoChanged rates={v} />
                       <RateTable rates={v} />
                     </div>
                   ))}
@@ -146,6 +159,7 @@ function RateDialog({
     start?.tiers.map((t) => ({ upTo: t.upTo === null ? '' : String(t.upTo), rate: t.rate })) ?? [{ upTo: '', rate: '' }],
   );
   const [method, setMethod] = useState(start?.method ?? 'BLOCK');
+  const [note, setNote] = useState('');
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
 
@@ -163,6 +177,7 @@ function RateDialog({
         minimumCharge,
         minimumCoversM3: covers,
         method,
+        note,
         tiers: tiers.map((t) => ({ upTo: t.upTo.trim() === '' ? null : Number(t.upTo), rate: t.rate })),
       });
       onDone();
@@ -182,7 +197,7 @@ function RateDialog({
           <Button onClick={onClose} disabled={saving}>
             Cancel
           </Button>
-          <Button variant="primary" onClick={save} disabled={saving}>
+          <Button variant="primary" onClick={save} disabled={saving || !note.trim()}>
             {saving ? 'Saving…' : 'Save New Rates'}
           </Button>
         </>
@@ -240,6 +255,9 @@ function RateDialog({
           <option value="BLOCK">Every cu.m above the minimum at the price of the block reached (how IWMPC bills today)</option>
           <option value="PROGRESSIVE">Each block at its own price</option>
         </select>
+      </Field>
+      <Field label="Reason for the change (required)" className="mt-4">
+        <input className="input" value={note} onChange={(e) => setNote(e.target.value)} placeholder="e.g. New approved tariff" />
       </Field>
       {error && (
         <Notice tone="error" className="mt-4">

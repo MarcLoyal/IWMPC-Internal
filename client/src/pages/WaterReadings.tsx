@@ -108,7 +108,7 @@ export function WaterReadings() {
 
   return (
     <>
-      <PageHeader title="Water" subtitle="Enter the monthly meter readings. The bills are made from them.">
+      <PageHeader title="Meter Readings" subtitle="Enter the monthly meter readings. The water bills are made from them.">
         <LinkButton to="/water/overdue">Overdue List</LinkButton>
       </PageHeader>
 

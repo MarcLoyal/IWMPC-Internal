@@ -51,7 +51,7 @@ export function Overdue() {
       <PageHeader
         title={only ? 'Disconnection Candidates' : 'Overdue Water Bills'}
         subtitle={data ? `As of ${formatDate(data.today)}` : undefined}
-        back={{ to: '/water', label: 'Back to Water' }}
+        back={{ to: '/water', label: 'Back to Meter Readings' }}
       >
         <PrintButton />
       </PageHeader>

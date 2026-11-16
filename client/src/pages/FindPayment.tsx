@@ -56,7 +56,10 @@ export function FindPayment() {
           <div className="mt-5 rounded-lg border border-slate-200 p-5">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
-                <div className="text-xl font-bold">{payment.accountName}</div>
+                <div className="text-xl font-bold">
+                  {payment.accountName}
+                  {payment.walkIn && <span className="ml-2 text-base font-normal text-slate-500">(walk-in)</span>}
+                </div>
                 <div className="text-slate-600">
                   {PAYMENT_TYPE[payment.type]} · {formatDate(payment.paymentDate)} · OR {payment.orNumber}
                 </div>

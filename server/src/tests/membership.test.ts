@@ -78,17 +78,21 @@ describe('Make a Member', () => {
     expect((await prisma.account.findUniqueOrThrow({ where: { id: juan.id } })).isMember).toBe(false);
   });
 
-  it('requires the membership fee in full', async () => {
+  it('requires at least the full membership fee, and allows paying more', async () => {
     const staff = await loginAs('STAFF');
     const cashier = await loginAs('CASHIER');
     const juan = await makeAccount('Juan Dela Cruz', 'ACTIVE');
     await staff.post(`/api/accounts/${juan.id}/make-member`).send(FORM);
-    for (const amount of ['250', '499.99', '600']) {
+    for (const amount of ['250', '499.99']) {
       const res = await cashier.post('/api/payments').send(fee(juan.id, '1045', amount));
       expect(res.status).toBe(400);
       expect(res.body.error).toMatch(/in full/);
     }
     expect(await prisma.payment.count()).toBe(0);
+    const more = await cashier.post('/api/payments').send(fee(juan.id, '1045', '600'));
+    expect(more.status).toBe(201);
+    expect(more.body.amount).toBe('600.00');
+    expect((await prisma.account.findUniqueOrThrow({ where: { id: juan.id } })).isMember).toBe(true);
   });
 
   it('cannot be done twice, and is_member cannot be set by editing the account', async () => {
