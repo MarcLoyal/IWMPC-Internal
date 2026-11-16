@@ -123,9 +123,7 @@ async function seedWater(staffId: number, cashierId: number, or: number): Promis
 /** Sample prices (only where none is set) and a few weeks of Rice & LPG sales. Returns the next unused OR number. */
 async function seedSales(cashierId: number, adminId: number, or: number): Promise<number> {
   const prices: Record<string, [string, string | null]> = {
-    'Dinorado|per kilo': ['65.00', null],
     'Dinorado|per sack (25 kg)': ['1550.00', null],
-    'Sinandomeng|per kilo': ['52.00', null],
     'Sinandomeng|per sack (25 kg)': ['1250.00', null],
     'LPG|per 11 kg tank (refill)': ['950.00', null],
   };
@@ -144,10 +142,10 @@ async function seedSales(cashierId: number, adminId: number, or: number): Promis
   const baskets: [string, number][][] = [
     [['Dinorado|per sack (25 kg)', 1]],
     [['LPG|per 11 kg tank (refill)', 1]],
-    [['Sinandomeng|per kilo', 5]],
-    [['Dinorado|per kilo', 2.5], ['LPG|per 11 kg tank (refill)', 1]],
+    [['Sinandomeng|per sack (25 kg)', 2]],
+    [['Dinorado|per sack (25 kg)', 1], ['LPG|per 11 kg tank (refill)', 1]],
     [['Sinandomeng|per sack (25 kg)', 1], ['LPG|per 11 kg tank (refill)', 1]],
-    [['Dinorado|per kilo', 10]],
+    [['Dinorado|per sack (25 kg)', 2]],
   ];
   // Sales over the last five weeks, a walk-in every fourth one, the last three today.
   for (let i = 0; i < 18; i++) {

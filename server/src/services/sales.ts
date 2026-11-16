@@ -218,8 +218,8 @@ export type Category = 'RICE' | 'LPG' | 'OTHER';
 export const CATEGORIES: Category[] = ['RICE', 'LPG', 'OTHER'];
 
 export const DEFAULT_PRODUCTS: { name: string; category: Category; units: string[] }[] = [
-  { name: 'Dinorado', category: 'RICE', units: ['per kilo', 'per sack (25 kg)'] },
-  { name: 'Sinandomeng', category: 'RICE', units: ['per kilo', 'per sack (25 kg)'] },
+  { name: 'Dinorado', category: 'RICE', units: ['per sack (25 kg)'] },
+  { name: 'Sinandomeng', category: 'RICE', units: ['per sack (25 kg)'] },
   { name: 'LPG', category: 'LPG', units: ['per 11 kg tank (refill)'] },
 ];
 

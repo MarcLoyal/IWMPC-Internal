@@ -24,6 +24,9 @@ export function Products() {
   const { data, error, loading, reload } = useLoad<{ products: Product[] }>('/products?all=1');
   const [dialog, setDialog] = useState<Dialog | null>(null);
   const [problem, setProblem] = useState('');
+  // Products and units no longer sold are hidden unless asked for. They are kept for past sales.
+  const [showRetired, setShowRetired] = useState(false);
+  const retired = (data?.products ?? []).reduce((n, p) => n + (p.active ? p.units.filter((u) => !u.active).length : 1), 0);
 
   const done = () => {
     setDialog(null);
@@ -60,9 +63,17 @@ export function Products() {
         </Notice>
       )}
       {loading && !data && <Loading what="products" />}
+      {retired > 0 && (
+        <label className="mb-4 flex items-center gap-2 text-slate-700">
+          <input type="checkbox" className="h-4 w-4" checked={showRetired} onChange={(e) => setShowRetired(e.target.checked)} />
+          Show items no longer sold ({retired})
+        </label>
+      )}
 
       <div className="max-w-4xl space-y-5">
-        {data?.products.map((product) => (
+        {data?.products
+          .filter((product) => product.active || showRetired)
+          .map((product) => (
           <Card key={product.id}>
             <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 px-5 py-3">
               <h2 className="flex items-center gap-3 text-xl font-bold">
@@ -122,7 +133,9 @@ export function Products() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {product.units.map((unit) => (
+                {product.units
+                  .filter((unit) => unit.active || showRetired)
+                  .map((unit) => (
                   <tr key={unit.id} className={unit.active ? '' : 'text-slate-400'}>
                     <td className="td py-2 font-semibold">
                       {unit.label}

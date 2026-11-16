@@ -31,7 +31,7 @@ export function Layout() {
   const items = [
     { to: '/', name: 'Home', icon: ICONS.home, end: true },
     { to: '/accounts', name: 'Accounts', icon: ICONS.accounts },
-    { to: '/water', name: 'Water', icon: ICONS.water },
+    { to: '/water', name: 'Meter Readings', icon: ICONS.water },
     { to: '/cashier', name: 'Cashier', icon: ICONS.cashier },
   ];
   const footLink = 'font-semibold text-brand-100 underline-offset-2 hover:text-white hover:underline';
