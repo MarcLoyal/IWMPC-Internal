@@ -9,12 +9,31 @@ export const SETTING_DEFAULTS = {
   coop_mobile: '0910-4918-512',
   // Printed bills: paper size and the three signatories.
   bill_paper: 'LETTER',
-  bill_preparer_name: 'Alfa M. Mahiya',
+  bill_preparer_name: 'Alffa M. Mahiya',
   bill_preparer_title: 'Billing Officer',
   bill_cashier_name: 'Emard B. Ramos',
   bill_cashier_title: 'Cashier',
   bill_manager_name: 'Marino R. Abanador',
   bill_manager_title: 'General Manager',
+  // Printing a signature image above each name ('true' / 'false'), per form and signatory.
+  sig_bill_preparer_on: 'true',
+  sig_bill_cashier_on: 'true',
+  sig_bill_manager_on: 'true',
+  sig_notice_preparer_on: 'true',
+  sig_notice_cashier_on: 'true',
+  sig_notice_manager_on: 'true',
+  // The 2-month unpaid notice.
+  notice_phone_line: 'Tel. No. 043 740-0767   Mobile No. +63910 491 8512',
+  notice_preparer_name: 'Maria B. Ilagan',
+  notice_preparer_title: 'Billing Officer',
+  notice_cashier_name: 'Emard B. Ramos',
+  notice_cashier_title: 'Cashier/Collector',
+  notice_manager_name: 'Marino R. Abanador',
+  notice_manager_title: 'General Manager',
+  notice_threshold_months: '2',
+  notice_per_page: '1',
+  disconnect_days_after_due: '5',
+  reconnection_fee: '1000.00',
   membership_fee: '0.00',
   installation_fee: '0.00',
   // Water billing. These apply to bills created from now on; existing bills keep their own terms.
@@ -41,6 +60,9 @@ export type SettingKey = keyof typeof SETTING_DEFAULTS;
 export type Settings = Record<SettingKey, string>;
 
 export const SETTING_KEYS = Object.keys(SETTING_DEFAULTS) as SettingKey[];
+
+/** Money settings: changing one needs a reason, and each change is kept in the setting history. */
+export const MONEY_SETTINGS: SettingKey[] = ['water_penalty_type', 'water_penalty_value', 'reconnection_fee'];
 
 export async function getSettings(db: Db): Promise<Settings> {
   const rows = await db.setting.findMany();

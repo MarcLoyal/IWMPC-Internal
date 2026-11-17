@@ -12,6 +12,7 @@ import { usersRouter } from './routes/users';
 import { waterRouter } from './routes/water';
 import { productsRouter } from './routes/products';
 import { salesRouter } from './routes/sales';
+import { signaturesRouter } from './routes/signatures';
 
 export const app = express();
 
@@ -36,6 +37,7 @@ app.use('/api/users', usersRouter);
 app.use('/api/water', waterRouter);
 app.use('/api/products', productsRouter);
 app.use('/api/sales', salesRouter);
+app.use('/api/signatures', signaturesRouter);
 
 app.use('/api', (_req, _res, next) => next(new AppError(404, 'This page was not found.')));
 app.use(errorHandler);

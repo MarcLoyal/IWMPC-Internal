@@ -386,7 +386,7 @@ describe('changing the rates', () => {
 
     expect((await admin.post('/api/water/rates').send(newRates)).status).toBe(201);
     // The penalty and due-date settings are changed too.
-    await admin.put('/api/settings').send({ water_penalty_type: 'FIXED', water_penalty_value: '50', water_due_days: '5' });
+    expect((await admin.put('/api/settings').send({ water_penalty_type: 'FIXED', water_penalty_value: '50', water_due_days: '5', reason: 'Board resolution' })).status).toBe(200);
 
     const before = (await admin.get(`/api/accounts/${account.id}`)).body.bills[0];
     expect(before).toMatchObject({ amount: '535.40', dueDate: addDays(today, 15) });

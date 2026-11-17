@@ -11,7 +11,8 @@ import { allow, wrap } from '../middleware/auth';
 import { audit } from '../services/audit';
 import { RATE_CLASSES, RATE_CLASS_LABEL, termsOf, type RateClass, type Tier } from '../services/rates';
 import { getSettings } from '../services/settings';
-import { BILLS_PER_PAGE, buildPrintBills, missingReadings, printSettings } from '../services/billPrint';
+import { BILLS_PER_PAGE, buildPrintBills, missingReadings, noticeSettings, printSettings } from '../services/billPrint';
+import { signaturesFor } from '../services/signatures';
 import { billJson, billState, saveReadings, unpaidBills } from '../services/water';
 
 export const waterRouter = Router();
@@ -25,13 +26,20 @@ function printOptions(query: Record<string, unknown>, fallbackPeriod: string) {
     .split(',')
     .map(Number)
     .filter((n) => Number.isInteger(n) && n > 0);
+  const disconnectDate = typeof query.disconnectDate === 'string' && query.disconnectDate ? query.disconnectDate : null;
+  if (disconnectDate && !isDateString(disconnectDate)) throw new AppError(400, 'Please choose a valid disconnection date.');
   return {
     period,
     areaIds,
     unpaidOnly: query.which === 'unpaid',
     sort: query.sort === 'meter' ? ('METER' as const) : ('AREA' as const),
+    form: query.form === 'bill' ? ('BILL' as const) : query.form === 'notice' ? ('NOTICE' as const) : ('ALL' as const),
+    disconnectDate,
   };
 }
+
+// Printing puts signatures into the PDF, so only the roles who hand out bills may print.
+const canPrint = allow('ADMIN', 'STAFF', 'CASHIER');
 
 async function latestBilledPeriod(): Promise<string> {
   const latest = await prisma.waterBill.findFirst({ orderBy: { period: 'desc' }, select: { period: true } });
@@ -41,27 +49,46 @@ async function latestBilledPeriod(): Promise<string> {
 // What a batch would print: counts per area, pages, and connections with no reading yet.
 waterRouter.get(
   '/print/summary',
+  canPrint,
   wrap(async (req, res) => {
     const opts = printOptions(req.query, await latestBilledPeriod());
-    const [bills, missing, header, areas, periods] = await Promise.all([
-      buildPrintBills(opts),
+    const [all, missing, header, notice, areas, periods] = await Promise.all([
+      buildPrintBills({ ...opts, form: 'ALL' }),
       missingReadings(opts.period, opts.areaIds),
       printSettings(),
+      noticeSettings(),
       prisma.area.findMany({ orderBy: { id: 'asc' } }),
       prisma.waterBill.findMany({ distinct: ['period'], select: { period: true }, orderBy: { period: 'desc' }, take: 36 }),
     ]);
+    const monthly = all.filter((b) => b.form === 'BILL');
+    const notices = all.filter((b) => b.form === 'NOTICE');
+    const bills = opts.form === 'BILL' ? monthly : opts.form === 'NOTICE' ? notices : all;
+    const perArea = (list: typeof all, perPage: number) =>
+      areas.reduce((n, a) => n + Math.ceil(list.filter((b) => b.areaId === a.id).length / perPage), 0);
     const byArea = areas
-      .map((a) => ({ id: a.id, name: a.name, bills: bills.filter((b) => b.areaId === a.id).length }))
+      .map((a) => ({
+        id: a.id,
+        name: a.name,
+        bills: bills.filter((b) => b.areaId === a.id).length,
+        monthly: monthly.filter((b) => b.areaId === a.id).length,
+        notices: notices.filter((b) => b.areaId === a.id).length,
+      }))
       .filter((a) => a.bills > 0);
+    const showMonthly = opts.form !== 'NOTICE';
+    const showNotices = opts.form !== 'BILL';
     res.json({
       ...opts,
       periods: periods.map((p) => p.period),
       areas,
       header,
+      notice,
       bills: bills.length,
-      pages: Math.ceil(bills.length / BILLS_PER_PAGE),
+      monthlyBills: showMonthly ? monthly.length : 0,
+      notices: showNotices ? notices.length : 0,
+      // Monthly bills are 4 to a page; notices 1 or 2 to a page. They are separate PDFs.
+      pages: (showMonthly ? Math.ceil(monthly.length / BILLS_PER_PAGE) : 0) + (showNotices ? Math.ceil(notices.length / notice.perPage) : 0),
       // With one file per area, each area starts on a new page.
-      pagesPerArea: byArea.reduce((n, a) => n + Math.ceil(a.bills / BILLS_PER_PAGE), 0),
+      pagesPerArea: (showMonthly ? perArea(monthly, BILLS_PER_PAGE) : 0) + (showNotices ? perArea(notices, notice.perPage) : 0),
       byArea,
       missing,
     });
@@ -71,6 +98,7 @@ waterRouter.get(
 // The bills themselves, a page at a time so a big batch never times out.
 waterRouter.get(
   '/print/bills',
+  canPrint,
   wrap(async (req, res) => {
     const offset = Math.max(0, Math.floor(Number(req.query.offset)) || 0);
     const limit = Math.min(500, Math.max(1, Math.floor(Number(req.query.limit)) || 500));
@@ -78,16 +106,28 @@ waterRouter.get(
       .split(',')
       .map(Number)
       .filter((n) => Number.isInteger(n) && n > 0);
+    const opts = printOptions(req.query, await latestBilledPeriod());
     const all = billIds.length
-      ? await buildPrintBills({ billIds: billIds.slice(0, 500) })
-      : await buildPrintBills(printOptions(req.query, await latestBilledPeriod()));
-    res.json({ header: await printSettings(), total: all.length, offset, bills: all.slice(offset, offset + limit) });
+      ? await buildPrintBills({ billIds: billIds.slice(0, 500), disconnectDate: opts.disconnectDate })
+      : await buildPrintBills(opts);
+    const settings = (await getSettings(prisma)) as unknown as Record<string, string>;
+    // The signatures go only into the print data, never to a link or the screen.
+    res.set('Cache-Control', 'no-store');
+    res.json({
+      header: await printSettings(),
+      noticeHeader: await noticeSettings(),
+      signatures: offset === 0 ? { bill: await signaturesFor('bill', settings), notice: await signaturesFor('notice', settings) } : null,
+      total: all.length,
+      offset,
+      bills: all.slice(offset, offset + limit),
+    });
   }),
 );
 
 // Records that bills were printed, and by whom. Reprints simply add another record.
 waterRouter.post(
   '/print/record',
+  canPrint,
   wrap(async (req, res) => {
     const { billIds } = z.object({ billIds: z.array(z.number().int().positive()).min(1).max(20000) }).parse(req.body);
     const found = await prisma.waterBill.findMany({ where: { id: { in: billIds } }, select: { id: true } });

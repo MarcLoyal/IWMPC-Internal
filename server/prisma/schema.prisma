@@ -79,6 +79,8 @@ model User {
   paymentsVoided  Payment[]  @relation("PaymentVoidedBy")
   auditLogs       AuditLog[]
   billPrints      BillPrint[]
+  settingChanges  SettingChange[]
+  signatures      SignatureImage[]
   priceChanges    PriceChange[]
   salesCreated    Sale[]     @relation("SaleCreatedBy")
 
@@ -437,4 +439,40 @@ model BillPrint {
 
   @@index([waterBillId])
   @@map("bill_prints")
+}
+
+// Every change to a setting: old value, new value, who, when, and (for money settings) why.
+// Never edited or deleted.
+model SettingChange {
+  id          Int      @id @default(autoincrement())
+  key         String
+  oldValue    String?  @map("old_value")
+  newValue    String   @map("new_value")
+  reason      String   @default("")
+  changedById Int?     @map("changed_by")
+  changedAt   DateTime @default(now()) @map("changed_at")
+
+  changedBy User? @relation(fields: [changedById], references: [id])
+
+  @@index([key])
+  @@map("setting_changes")
+}
+
+// A signatory's signature for printed bills, e.g. slot "bill_preparer" or "notice_manager".
+// The image lives in a private Supabase Storage bucket; `data` holds it only when Supabase
+// Storage is not set up (local development and tests).
+model SignatureImage {
+  id          Int      @id @default(autoincrement())
+  slot        String   @unique
+  storage     String
+  storageKey  String   @map("storage_key")
+  data        Bytes?
+  width       Int
+  height      Int
+  updatedById Int?     @map("updated_by")
+  updatedAt   DateTime @default(now()) @updatedAt @map("updated_at")
+
+  updatedBy User? @relation(fields: [updatedById], references: [id])
+
+  @@map("signature_images")
 }
