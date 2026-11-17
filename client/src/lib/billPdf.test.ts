@@ -3,7 +3,7 @@ import { resolve } from 'node:path';
 import { PDFDocument } from 'pdf-lib';
 import fontkit from '@pdf-lib/fontkit';
 import { describe, expect, it } from 'vitest';
-import { BILLS_PER_PAGE, PAPER, layoutBill, makeBillsPdf, pageCount, slotFor, type Measure, type PrintBill, type PrintHeader } from './billPdf';
+import { BILLS_PER_PAGE, PAPER, layoutBill, layoutNotice, makeBillsPdf, makeNoticesPdf, noticeSlot, pageCount, slotFor, type Box, type Measure, type NoticeHeader, type Op, type PrintBill, type PrintHeader, type Who } from './billPdf';
 
 const pub = (f: string) => readFileSync(resolve(__dirname, '../../public', f));
 const assets = { regular: pub('fonts/LiberationSans-Regular.ttf'), bold: pub('fonts/LiberationSans-Bold.ttf'), logo: pub('logo-bw.png') };
@@ -30,6 +30,9 @@ function bill(i: number, earlier = 0): PrintBill {
   rows.push({ kind: 'CURRENT', month: 'Oct 2026', cubicMeters: 23, amount: '535.40', withPenalty: false });
   if (earlier > 5) rows.push({ kind: 'PAYMENT', month: 'Less: payment received', cubicMeters: null, amount: '-200.00', withPenalty: false });
   return {
+    form: 'BILL',
+    unpaidMonths: 1,
+    notice: null,
     billId: i,
     area: 'Almasiga',
     accountName: i === 0 ? 'Maria Clarissa Concepcion Villanueva-Dimaculangan de los Santos' : `Juan Dela Cruz ${i}`,
@@ -137,5 +140,140 @@ describe('the PDF file', () => {
     }
     const long = await PDFDocument.load(await makeBillsPdf({ ...header, paper: 'LONG' }, [bill(1)], assets));
     expect(long.getPage(0).getSize()).toEqual(PAPER.LONG);
+  });
+});
+
+// ---- signatures and the 2-month notice -----------------------------------------------------------
+
+const noticeHeader: NoticeHeader = {
+  coopName: 'INICBULAN WATERWORKS MULTI-PURPOSE COOPERATIVE',
+  coopAddress: 'Inicbulan, Bauan, Batangas',
+  cdaNo: '9520-04002341',
+  phoneLine: 'Tel. No. 043 740-0767   Mobile No. +63910 491 8512',
+  penaltyLabel: 'PENALTY (10%)',
+  reconnectionFee: '1000.00',
+  thresholdMonths: 2,
+  perPage: 1,
+  paper: 'LETTER',
+  signatories: [
+    { label: 'Prepared by:', name: 'Maria B. Ilagan', title: 'Billing Officer' },
+    { label: '', name: 'Emard B. Ramos', title: 'Cashier/Collector' },
+    { label: '', name: 'Marino R. Abanador', title: 'General Manager' },
+  ],
+};
+
+function noticeBill(rows: number): PrintBill {
+  const r = Array.from({ length: rows }, (_, i) => ({ month: i === 0 && rows > 6 ? 'Jan-Mar 2026' : `Sep 2026`, cubicMeters: 22, amount: '510.60', penalty: '51.06', total: '561.66' }));
+  return {
+    ...bill(1),
+    form: 'NOTICE',
+    unpaidMonths: rows,
+    notice: { rows: r, totals: { amount: '1021.20', penalty: '102.12', total: '1123.32' }, dueDate: '2026-11-15', disconnectionDate: '2026-11-20' },
+  };
+}
+
+const bounds = (op: Op, m: Measure) =>
+  op.type === 'text'
+    ? [op.x, op.y - op.size * 0.25, op.x + m.width(op.text, op.size, op.bold), op.y + op.size]
+    : op.type === 'line'
+      ? [Math.min(op.x1, op.x2), Math.min(op.y1, op.y2), Math.max(op.x1, op.x2), Math.max(op.y1, op.y2)]
+      : op.type === 'logo'
+        ? [op.x, op.y, op.x + op.size, op.y + op.size]
+        : [op.x, op.y, op.x + op.width, op.y + op.height];
+
+function inside(ops: Op[], box: Box, m: Measure) {
+  for (const op of ops) {
+    const [x0, y0, x1, y1] = bounds(op, m);
+    expect(x0).toBeGreaterThanOrEqual(box.x + 4);
+    expect(x1).toBeLessThanOrEqual(box.x + box.width - 4);
+    expect(y0).toBeGreaterThanOrEqual(box.y + 4);
+    expect(y1).toBeLessThanOrEqual(box.y + box.height - 4);
+  }
+}
+
+const ALL: ReadonlySet<Who> = new Set(['preparer', 'cashier', 'manager']);
+
+describe('signatures', () => {
+  it('sit on each signature line when there is an image, and leave a blank line when there is none', async () => {
+    const m = await measure();
+    const box = slotFor(0, 'LETTER').box;
+    const none = layoutBill(header, bill(1), box, m);
+    expect(none.filter((o) => o.type === 'signature')).toEqual([]);
+    expect(none.filter((o) => o.type === 'line' && o.y1 === o.y2 && o.x2 - o.x1 < 100)).toHaveLength(3);
+
+    const some = layoutBill(header, bill(1, 8), box, m, new Set<Who>(['preparer', 'manager']));
+    const sigs = some.filter((o): o is Extract<Op, { type: 'signature' }> => o.type === 'signature');
+    expect(sigs.map((o) => o.who)).toEqual(['preparer', 'manager']);
+    inside(some, box, m);
+    // Above the name, below "Prepared by:".
+    const label = some.find((o) => o.type === 'text' && o.text === 'Prepared by:');
+    const name = some.find((o) => o.type === 'text' && o.text === 'ALFA M. MAHIYA');
+    expect(label && name && label.type === 'text' && name.type === 'text' && sigs[0].y + sigs[0].height <= label.y && sigs[0].y > name.y).toBe(true);
+  });
+
+  it('are drawn into the PDF only when given', async () => {
+    const images = (bytes: Uint8Array) => (Buffer.from(bytes).toString('latin1').match(/\/Subtype\s*\/Image/g) ?? []).length;
+    const sig = pub('logo-bw.png');
+    expect(images(await makeBillsPdf(header, [bill(1)], assets))).toBe(1);
+    expect(images(await makeBillsPdf(header, [bill(1)], assets, 'LETTER', { preparer: sig, cashier: sig }))).toBe(3);
+    expect(images(await makeNoticesPdf(noticeHeader, [noticeBill(2)], assets, 'LETTER', { manager: sig }))).toBe(2);
+  });
+});
+
+describe('the 2-month notice', () => {
+  it('fits its page, 1 per page (landscape) or 2 per page, with few or many months', async () => {
+    const m = await measure();
+    for (const paper of ['LETTER', 'LONG'] as const) {
+      for (const perPage of [1, 2] as const) {
+        for (const rows of [2, 6, perPage === 1 ? 12 : 6]) {
+          for (const i of [0, 1]) {
+            const { box } = noticeSlot(i, perPage, paper);
+            const ops = layoutNotice({ ...noticeHeader, perPage }, noticeBill(rows), box, m, ALL);
+            inside(ops, box, m);
+            const lastNote = ops.filter((o) => o.type === 'text' && o.text.startsWith('If payment')).pop();
+            const label = ops.find((o) => o.type === 'text' && o.text === 'Prepared by:');
+            expect(lastNote && label && lastNote.type === 'text' && label.type === 'text' && lastNote.y > label.y).toBe(true);
+          }
+        }
+      }
+    }
+  });
+
+  it('shows the columns, the dates, the notes and the signatories from Settings', async () => {
+    const m = await measure();
+    const texts = layoutNotice({ ...noticeHeader, reconnectionFee: '1500.00', thresholdMonths: 3 }, noticeBill(2), noticeSlot(0, 1, 'LETTER').box, m)
+      .filter((o): o is Extract<Op, { type: 'text' }> => o.type === 'text')
+      .map((o) => o.text);
+    expect(texts).toEqual(
+      expect.arrayContaining([
+        'WATER SERVICE BILLING',
+        'Tel. No. 043 740-0767   Mobile No. +63910 491 8512',
+        'MONTH',
+        'CONSUMPTION',
+        '(cubic meters)',
+        'AMOUNT',
+        'w/o PENALTY',
+        'PENALTY (10%)',
+        'TOTAL AMOUNT',
+        '**DUE DATE (NO PENALTY)',
+        'November 15, 2026',
+        '*** DISCONNECTION DATE',
+        'November 20, 2026',
+        '₱1,123.32',
+        'MARIA B. ILAGAN',
+        'Cashier/Collector',
+      ]),
+    );
+    expect(texts.join(' ')).toContain('Three months of no payments shall be subject for disconnection');
+    expect(texts.join(' ')).toContain('RECONNECTION FEE will be imposed (PHP 1,500.00)');
+  });
+
+  it('makes the right number of pages', async () => {
+    const one = await PDFDocument.load(await makeNoticesPdf(noticeHeader, [noticeBill(2), noticeBill(3), noticeBill(2)], assets));
+    expect(one.getPageCount()).toBe(3);
+    expect(one.getPage(0).getSize()).toEqual({ width: 792, height: 612 });
+    const two = await PDFDocument.load(await makeNoticesPdf({ ...noticeHeader, perPage: 2 }, [noticeBill(2), noticeBill(3), noticeBill(2)], assets, 'LONG'));
+    expect(two.getPageCount()).toBe(2);
+    expect(two.getPage(0).getSize()).toEqual(PAPER.LONG);
   });
 });
