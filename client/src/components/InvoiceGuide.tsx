@@ -6,7 +6,7 @@ import { Button, Loading, Notice } from './ui';
 
 /** What to write on the paper BIR Service Invoice (worked out by the server). */
 export interface Guide {
-  header: { coopName: string; coopAddress: string; tinLine: string; phoneLine: string; atpNo: string; atpDate: string };
+  header: { coopName: string; coopAddress: string; tinLine: string; phoneLine: string; atpNo: string; atpDate: string; seriesFrom?: string; seriesTo?: string };
   number: string;
   date: string;
   cashSales: boolean;
@@ -36,164 +36,216 @@ export interface Guide {
   amountInWords: string;
 }
 
-const Amount = ({ value }: { value: string | null }) => (value ? <span className="text-xl font-bold tabular-nums text-slate-900">{peso(value)}</span> : null);
+/** Values to copy are shown in blue, like pen on the printed form, so they stand out from the labels. */
+const PEN = 'font-semibold text-blue-800';
+const money = (v: string | null) => (v ? Number(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '');
 
-function FieldRow({ label, children }: { label: string; children: ReactNode }) {
+/** A label with a write-on line, as on the booklet ("Registered Name: ________"). */
+function Blank({ label, value, className = '' }: { label: string; value?: ReactNode; className?: string }) {
   return (
-    <div className="flex items-baseline gap-2 border-b border-slate-300 py-1">
-      <span className="shrink-0 text-sm text-slate-600">{label}</span>
-      <span className="min-w-0 flex-1 text-lg font-bold text-slate-900">{children || ' '}</span>
+    <div className={`flex min-w-0 items-end gap-2 ${className}`}>
+      <span className="shrink-0 font-serif text-[15px] text-slate-800">{label}</span>
+      <span className={`min-h-[1.75rem] min-w-0 flex-1 truncate border-b border-slate-500 px-1 text-lg leading-7 ${PEN}`}>{value}</span>
     </div>
   );
 }
 
-function Line({ code, label, qty, amount, sub, bold = false }: { code: string; label: string; qty?: ReactNode; amount: string | null; sub?: ReactNode; bold?: boolean }) {
+const Box = ({ on }: { on: boolean }) => (
+  <span aria-hidden className="inline-flex h-5 w-5 shrink-0 items-center justify-center border-2 border-slate-700 text-base font-black leading-none text-blue-800">
+    {on ? '✓' : ''}
+  </span>
+);
+
+const cell = 'border border-slate-600 px-2 py-1';
+const amountCell = `${cell} text-right text-lg tabular-nums ${PEN}`;
+
+/** One printed row of the table (A1 to D): label across the two item columns, then quantity, unit price, amount. */
+function Row({ label, amount, indent = false, note }: { label: string; amount: string | null; indent?: boolean; note?: string }) {
   return (
-    <tr className="border-b border-slate-300 align-top">
-      <td className={`px-2 py-1.5 ${code.length > 1 ? 'pl-6' : ''}`}>
-        <span className={bold ? 'font-bold' : 'font-semibold'}>
-          {code}. {label}
-        </span>
-        {sub && <div className="text-sm text-slate-600">{sub}</div>}
+    <tr>
+      <td colSpan={2} className={`${cell} ${indent ? 'pl-7 font-semibold' : 'font-bold'} whitespace-nowrap`}>
+        {label}
+        {note && <div className="text-sm font-normal italic text-slate-500">{note}</div>}
       </td>
-      <td className="border-l border-slate-300 px-2 py-1.5 text-center text-xl font-bold tabular-nums">{qty}</td>
-      <td className="border-l border-slate-300 px-2 py-1.5" />
-      <td className="border-l border-slate-300 px-2 py-1.5 text-right">
-        <Amount value={amount} />
-      </td>
+      <td className={cell} />
+      <td className={cell} />
+      <td className={amountCell}>{money(amount)}</td>
     </tr>
   );
 }
 
-/** The filled-in invoice, laid out like IWMPC's booklet, with the "GUIDE ONLY" watermark. */
+/** The filled-in invoice, laid out like IWMPC's BIR Service Invoice booklet, with the "GUIDE ONLY" watermark. */
 export function InvoiceGuideSheet({ guide: g }: { guide: Guide }) {
+  const h = g.header;
+  const series = h.seriesFrom && h.seriesTo ? `${Number(h.seriesFrom).toLocaleString('en-US')}-${Number(h.seriesTo).toLocaleString('en-US')}` : '';
   return (
-    <div className="relative overflow-hidden rounded-lg border-2 border-slate-400 bg-white p-4 sm:p-5">
+    <div className="relative mx-auto max-w-[660px] overflow-hidden border border-slate-400 bg-white px-5 py-5 text-slate-900 shadow-md sm:px-7">
       {/* The watermark: across the whole guide, on top, but it does not block reading or copying. */}
       <div aria-hidden className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center">
-        <span className="-rotate-[28deg] select-none whitespace-nowrap text-[2.6rem] font-black uppercase tracking-wider text-red-600/15 sm:text-6xl">
+        <span className="-rotate-[30deg] select-none whitespace-nowrap text-[2.4rem] font-black uppercase tracking-wider text-red-600/15 sm:text-[3.4rem]">
           Guide only – not an invoice
         </span>
       </div>
       <span className="sr-only">Guide only – not an invoice.</span>
 
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <div className="text-lg font-black leading-tight">{g.header.coopName}</div>
-          <div className="text-sm">{g.header.coopAddress}</div>
-          <div className="text-sm">{g.header.tinLine}</div>
-          <div className="text-sm">{g.header.phoneLine}</div>
+      {/* Header: the cooperative on the left, the number and SERVICE INVOICE on the right */}
+      <div className="flex flex-wrap items-end justify-between gap-x-4 gap-y-2">
+        <div className="min-w-0">
+          <div className="max-w-[380px] text-xl font-black uppercase leading-tight">{h.coopName.replace(/-/g, '\u2011')}</div>
+          <div className="text-[15px] leading-snug">{h.coopAddress}</div>
+          <div className="text-[15px] leading-snug">{h.tinLine}</div>
+          <div className="text-[15px] leading-snug">{h.phoneLine}</div>
         </div>
         <div className="text-right">
-          <div className="text-sm font-semibold text-slate-600">No.</div>
-          <div className="text-3xl font-black tabular-nums text-slate-900">{g.number || '—'}</div>
-          <div className="text-lg font-black">SERVICE INVOICE</div>
-          <div className="text-sm text-slate-600">
-            Date: <span className="text-lg font-bold text-slate-900">{formatDate(g.date)}</span>
+          <div className="flex items-baseline justify-end gap-2">
+            <span className="text-xl font-black">Nº</span>
+            <span className="text-4xl font-semibold tabular-nums tracking-wide text-red-700">{g.number || '—'}</span>
           </div>
         </div>
       </div>
 
-      <div className="mt-2 flex gap-6 text-base font-semibold">
-        <span>{g.cashSales ? '☒' : '☐'} CASH SALES</span>
-        <span>{g.chargeSales ? '☒' : '☐'} CHARGE SALES</span>
+      <div className="mt-2 flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
+        <div className="space-y-1 text-[15px] font-semibold">
+          <label className="flex items-center gap-2">
+            <Box on={g.cashSales} /> CASH SALES
+          </label>
+          <label className="flex items-center gap-2">
+            <Box on={g.chargeSales} /> CHARGE SALES
+          </label>
+        </div>
+        <div className="w-[250px] max-w-full space-y-1">
+          <div className="text-right">
+            <span className="text-base font-black">SERVICE </span>
+            <span className="text-2xl font-black">INVOICE</span>
+          </div>
+          <Blank label="Date:" value={formatDate(g.date)} />
+        </div>
       </div>
 
-      <div className="mt-2 grid gap-x-6 sm:grid-cols-2">
-        <div className="sm:col-span-2">
-          <FieldRow label="Registered Name:">{g.registeredName}</FieldRow>
+      {/* The buyer */}
+      <div className="mt-3 space-y-1.5">
+        <Blank label="Sold to:" />
+        <Blank label="Registered Name:" value={g.registeredName} />
+        <div className="grid gap-x-4 gap-y-1.5 sm:grid-cols-[1.15fr_1fr]">
+          <Blank label="TIN:" value={g.tin} />
+          <Blank label="Meter No." value={g.meterNo} />
         </div>
-        <FieldRow label="TIN:">{g.tin}</FieldRow>
-        <FieldRow label="Meter No.:">{g.meterNo}</FieldRow>
-        <div className="sm:col-span-2">
-          <FieldRow label="Business Address:">{g.businessAddress}</FieldRow>
+        <Blank label="Business Address:" value={g.businessAddress} />
+        <div className="grid gap-x-4 gap-y-1.5 sm:grid-cols-[1.15fr_1fr]">
+          <Blank label="Period Cover From:" value={g.periodFrom} />
+          <Blank label="To:" value={g.periodTo} />
         </div>
-        <FieldRow label="Period Cover From:">{g.periodFrom}</FieldRow>
-        <FieldRow label="To:">{g.periodTo}</FieldRow>
       </div>
 
-      <table className="mt-3 w-full table-fixed border-2 border-slate-400 text-base">
+      {/* The table, as printed */}
+      <table className="mt-3 w-full table-fixed border-collapse border-2 border-slate-700 text-[15px]">
         <colgroup>
-          <col />
           <col className="w-[22%]" />
+          <col className="w-[22%]" />
+          <col className="w-[18%]" />
           <col className="w-[13%]" />
-          <col className="w-[22%]" />
+          <col className="w-[25%]" />
         </colgroup>
-        <thead className="border-b-2 border-slate-400 bg-slate-50 text-xs font-bold uppercase">
+        <thead className="font-bold">
           <tr>
-            <th className="px-2 py-1.5 text-left">Item Description / Nature of Service</th>
-            <th className="border-l border-slate-300 px-2 py-1.5">Quantity</th>
-            <th className="border-l border-slate-300 px-2 py-1.5">Unit Price</th>
-            <th className="border-l border-slate-300 px-2 py-1.5 text-right">Amount Due</th>
+            <th colSpan={2} className={`${cell} text-center leading-tight`}>
+              Item Description/
+              <br />
+              Nature of Service
+            </th>
+            <th rowSpan={4} className={`${cell} text-center leading-tight`}>
+              Quantity
+              <div className="mt-3 text-sm">Cubic Meters Consumed</div>
+            </th>
+            <th rowSpan={4} className={`${cell} text-center leading-tight`}>
+              Unit Price
+            </th>
+            <th rowSpan={4} className={`${cell} text-center leading-tight tracking-wider`}>
+              Amount Due
+            </th>
+          </tr>
+          <tr>
+            <th colSpan={2} className={`${cell} text-left`}>
+              A. Water Consumption
+            </th>
+          </tr>
+          <tr>
+            <th colSpan={2} className={`${cell} text-center`}>
+              READINGS
+            </th>
+          </tr>
+          <tr>
+            <th className={`${cell} text-center`}>PRESENT</th>
+            <th className={`${cell} text-center`}>PREVIOUS</th>
           </tr>
         </thead>
         <tbody>
-          <Line
-            code="A"
-            label="Water Consumption"
-            bold
-            qty={g.water ? g.water.cubicMeters : undefined}
-            amount={g.water?.amount ?? null}
-            sub={
-              g.water ? (
-                <span className="text-base">
-                  Readings: Present <strong className="text-lg tabular-nums text-slate-900">{g.water.present}</strong> · Previous{' '}
-                  <strong className="text-lg tabular-nums text-slate-900">{g.water.previous}</strong> · Quantity = cubic meters consumed
-                </span>
-              ) : undefined
-            }
+          <tr>
+            <td className={`${cell} h-9 text-center text-lg tabular-nums ${PEN}`}>{g.water?.present ?? ''}</td>
+            <td className={`${cell} text-center text-lg tabular-nums ${PEN}`}>{g.water?.previous ?? ''}</td>
+            <td className={`${cell} text-center text-lg tabular-nums ${PEN}`}>{g.water?.cubicMeters ?? ''}</td>
+            <td className={cell} />
+            <td className={amountCell}>{money(g.water?.amount ?? null)}</td>
+          </tr>
+          <Row indent label="A1. Assessment" amount={g.assessment} />
+          <Row indent label="A2. Penalty/Surcharge" amount={g.penalty} />
+          <Row indent label="A3. Connection/Reconnection" amount={g.connection} />
+          <Row label="B. Consumer Store" amount={g.store?.amount ?? null} note={g.store?.items.join('; ')} />
+          <Row label="C. Loans Receivable" amount={g.loans} />
+          <Row indent label="C1. Interest" amount={g.loanInterest} />
+          <Row indent label="C2. Penalty/Surcharge" amount={g.loanPenalty} />
+          <Row
+            label="D. Others"
+            amount={g.othersTotal}
+            note={g.others.length > 0 ? g.others.map((o) => { const label = o.label.replace(/^Others?:\s*/i, ''); return g.others.length > 1 ? `${label} ${peso(o.amount)}` : label; }).join('; ') : undefined}
           />
-          <Line code="A1" label="Assessment" amount={g.assessment} />
-          <Line code="A2" label="Penalty/Surcharge" amount={g.penalty} />
-          <Line code="A3" label="Connection/Reconnection" amount={g.connection} />
-          <Line code="B" label="Consumer Store" bold amount={g.store?.amount ?? null} sub={g.store?.items.join('; ')} />
-          <Line code="C" label="Loans Receivable" bold amount={g.loans} />
-          <Line code="C1" label="Interest" amount={g.loanInterest} />
-          <Line code="C2" label="Penalty/Surcharge" amount={g.loanPenalty} />
-          <Line code="D" label="Others" bold amount={g.othersTotal} sub={g.others.length > 0 ? g.others.map((o) => `${o.label} ${peso(o.amount)}`).join('; ') : undefined} />
         </tbody>
       </table>
 
-      <div className="mt-3 grid gap-4 sm:grid-cols-[1fr_minmax(0,280px)]">
-        <div className="rounded border border-slate-300 p-2">
-          <div className="text-sm font-semibold text-slate-600">☐ Received the amount of</div>
-          <div className="text-lg font-bold">{g.amountInWords}</div>
-          <div className="text-xl font-black tabular-nums">({peso(g.totalAmountDue)})</div>
-          <div className="mt-6 border-t border-slate-500 pt-1 text-center text-sm text-slate-600">Cashier/Collector</div>
+      {/* Received the amount of … and the totals */}
+      <div className="mt-3 grid gap-4 sm:grid-cols-[1fr_290px]">
+        <div className="flex flex-col">
+          <div className="flex items-center gap-2 text-[15px]">
+            <Box on={false} /> Received the amount of
+          </div>
+          <div className={`mt-1 border-b border-slate-500 px-1 pb-0.5 text-base leading-snug ${PEN}`}>{g.amountInWords}</div>
+          <div className="mt-auto pt-8">
+            <div className="border-t border-slate-600 pt-0.5 text-center text-[15px]">Cashier/Collector</div>
+          </div>
         </div>
-        <table className="w-full border-2 border-slate-400 text-base">
+        <table className="w-full border-collapse border-2 border-slate-700 text-[15px]">
           <tbody>
-            <tr className="border-b border-slate-300">
-              <td className="px-2 py-1.5 font-semibold">Total Sales</td>
-              <td className="px-2 py-1.5 text-right">
-                <Amount value={g.totalSales} />
-              </td>
+            <tr>
+              <td className={`${cell} text-center`}>Total Sales</td>
+              <td className={`${amountCell} w-[45%]`}>{money(g.totalSales)}</td>
             </tr>
-            <tr className="border-b border-slate-300">
-              <td className="px-2 py-1.5 text-sm">Less: Discount</td>
-              <td className="px-2 py-1.5 text-right">
-                <Amount value={g.discount} />
+            <tr>
+              <td className={`${cell} text-center leading-tight`}>
+                Less: Discount
+                <div className="text-[11px]">(SC/PWD/NAAC/MOV/SP)</div>
               </td>
+              <td className={amountCell}>{money(g.discount)}</td>
             </tr>
-            <tr className="border-b border-slate-300">
-              <td className="px-2 py-1.5 text-sm">Less: Withholding Tax</td>
-              <td className="px-2 py-1.5 text-right">
-                <Amount value={g.withholdingTax} />
-              </td>
+            <tr>
+              <td className={`${cell} text-center`}>Less: Withholding Tax</td>
+              <td className={amountCell}>{money(g.withholdingTax)}</td>
             </tr>
-            <tr className="bg-slate-50">
-              <td className="px-2 py-2 font-black">TOTAL AMOUNT DUE</td>
-              <td className="px-2 py-2 text-right text-2xl font-black tabular-nums">{peso(g.totalAmountDue)}</td>
+            <tr>
+              <td className={`${cell} text-center font-black leading-tight`}>TOTAL AMOUNT DUE</td>
+              <td className={`${amountCell} text-xl font-bold`}>{money(g.totalAmountDue)}</td>
             </tr>
           </tbody>
         </table>
       </div>
-      {(g.header.atpNo || g.header.atpDate) && (
-        <div className="mt-2 text-xs text-slate-500">
-          ATP No. {g.header.atpNo}
-          {g.header.atpDate && ` · Date issued ${formatDate(g.header.atpDate)}`}
-        </div>
-      )}
+
+      <div className="mt-3 text-center">
+        <span className="inline-block rounded-full border border-slate-600 px-3 py-0.5 text-xs font-semibold">&quot;THIS DOCUMENT IS NOT VALID FOR CLAIM OF INPUT TAXES&quot;</span>
+      </div>
+      <div className="mt-2 border-t border-slate-400 pt-1.5 text-xs leading-snug text-slate-700">
+        BIR Authority to Print No: {h.atpNo || '—'}
+        {h.atpDate && <> · Date Issued: {formatDate(h.atpDate)}</>}
+        {series && <> · Approved Series: {series}</>}
+      </div>
     </div>
   );
 }

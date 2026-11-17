@@ -9,8 +9,8 @@ export const SETTING_DEFAULTS = {
   // BIR Service Invoice booklet (handwritten; the system only shows a guide).
   invoice_tin_line: 'NON VAT Reg. TIN-272-721-784-00000',
   invoice_phone_line: 'Tel. No. (043) 740-0767 / 0910-491-8512',
-  invoice_atp_no: '',
-  invoice_atp_date: '',
+  invoice_atp_no: '058AU20260000008873',
+  invoice_atp_date: '2026-05-13',
   invoice_series_from: '25001',
   invoice_series_to: '40000',
   coop_mobile: '0910-4918-512',

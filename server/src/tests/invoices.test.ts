@@ -78,7 +78,8 @@ describe('the invoice guide', () => {
       amountInWords: 'Two Hundred Eighty Pesos and 70/100',
     });
     expect(g.header).toMatchObject({ tinLine: 'NON VAT Reg. TIN-272-721-784-00000', phoneLine: 'Tel. No. (043) 740-0767 / 0910-491-8512' });
-    expect(g.periodFrom).toBe(g.periodTo);
+    expect(g.periodFrom).toBe(''); // one month: written on "To" only, as on the booklet
+    expect(g.periodTo).toMatch(/'\d\d$/);
     // The payment is recorded with the invoice number and can reopen the guide.
     const payment = await prisma.payment.findFirstOrThrow();
     expect(payment).toMatchObject({ orNumber: '28101', invoiceId: saved.body.invoice.id, amount: expect.anything() });
@@ -301,6 +302,6 @@ describe('Invoice booklet settings', () => {
     const res = await cashier.post('/api/invoices').send({ accountId: null, walkInName: '', number: '150', items: [{ type: 'SALE', items: [{ unitId: (await prisma.productUnit.findFirstOrThrow()).id, quantity: '1' }] }] });
     expect(res.status).toBe(201);
     expect(res.body.guide.header.atpNo).toBe('OCN-123');
-    expect(res.body.guide.header.atpDate).toBe('2025-03-01');
+    expect(res.body.guide.header).toMatchObject({ atpDate: '2025-03-01', seriesFrom: '100', seriesTo: '200' });
   });
 });

@@ -314,6 +314,8 @@ function guideFrom(
       phoneLine: settings.invoice_phone_line,
       atpNo: settings.invoice_atp_no,
       atpDate: settings.invoice_atp_date,
+      seriesFrom: settings.invoice_series_from,
+      seriesTo: settings.invoice_series_to,
     },
     number: head.number,
     date: head.date,
@@ -325,7 +327,8 @@ function guideFrom(
     tin: buyer.tin,
     meterNo: meters.join(', ') || buyer.meterNo,
     businessAddress: buyer.address,
-    periodFrom: sorted.length ? monthName(sorted[0].bill.period) : '',
+    // As IWMPC writes it: one month goes on "To" only; From is filled when several months are paid.
+    periodFrom: sorted.length > 1 && sorted[0].bill.period !== sorted[sorted.length - 1].bill.period ? monthName(sorted[0].bill.period) : '',
     periodTo: sorted.length ? monthName(sorted[sorted.length - 1].bill.period) : '',
     water: sorted.length
       ? {
