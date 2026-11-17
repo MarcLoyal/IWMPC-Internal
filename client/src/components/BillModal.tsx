@@ -1,4 +1,7 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
+import { errorMessage } from '../lib/api';
+import { formatDateTime } from '../lib/format';
+import { printOneBill } from '../lib/printBills';
 import { createPortal } from 'react-dom';
 import { useLoad } from '../lib/useLoad';
 import { periodLabel } from '../lib/water';
@@ -10,7 +13,23 @@ import { Button, Loading, Notice } from './ui';
  * the pop-up sits outside the page and the page itself is hidden on paper.
  */
 export function BillModal({ billId, onClose }: { billId: number; onClose: () => void }) {
-  const { data, error, loading } = useLoad<BillView>(`/water/bills/${billId}`);
+  const { data, error, loading, reload } = useLoad<BillView>(`/water/bills/${billId}`);
+  const [printing, setPrinting] = useState(false);
+  const [printError, setPrintError] = useState('');
+
+  // The same paper form as batch printing (PDF), one bill on the page.
+  async function printPaper() {
+    setPrinting(true);
+    setPrintError('');
+    try {
+      await printOneBill(billId);
+      void reload();
+    } catch (err) {
+      setPrintError(errorMessage(err));
+    } finally {
+      setPrinting(false);
+    }
+  }
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
@@ -39,9 +58,13 @@ export function BillModal({ billId, onClose }: { billId: number; onClose: () => 
           {error && <Notice tone="error">{error}</Notice>}
           {data && <BillContent data={data} />}
         </div>
-        <div className="no-print flex flex-wrap justify-end gap-3 rounded-b-xl border-t border-slate-200 bg-slate-50 px-6 py-4">
-          <Button onClick={() => window.print()} disabled={!data}>
-            Print
+        <div className="no-print flex flex-wrap items-center justify-end gap-3 rounded-b-xl border-t border-slate-200 bg-slate-50 px-6 py-4">
+          <span className="mr-auto text-sm text-slate-600">
+            {data?.lastPrinted ? `Last printed ${formatDateTime(data.lastPrinted.at)} by ${data.lastPrinted.by}` : data ? 'Not printed yet' : ''}
+            {printError && <span className="block text-red-700">{printError}</span>}
+          </span>
+          <Button onClick={() => void printPaper()} disabled={!data || printing}>
+            {printing ? 'Preparing…' : 'Print Bill'}
           </Button>
           <Button variant="primary" onClick={onClose}>
             Close

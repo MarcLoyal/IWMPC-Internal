@@ -239,6 +239,17 @@ export interface Settings {
   coop_address: string;
   coop_cda_no: string;
   water_due_days: string;
+  water_due_rule: 'DAY_OF_NEXT_MONTH' | 'DAYS_AFTER_READING';
+  water_due_day: string;
+  coop_phone: string;
+  coop_mobile: string;
+  bill_paper: 'LETTER' | 'LONG';
+  bill_preparer_name: string;
+  bill_preparer_title: string;
+  bill_cashier_name: string;
+  bill_cashier_title: string;
+  bill_manager_name: string;
+  bill_manager_title: string;
   water_penalty_type: 'PERCENT' | 'FIXED';
   water_penalty_value: string;
   water_disconnect_months: string;

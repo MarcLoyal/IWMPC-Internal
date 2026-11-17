@@ -17,6 +17,7 @@ import { Products } from './pages/Products';
 import { SalesReport } from './pages/SalesReport';
 import { BillNotice } from './pages/BillNotice';
 import { Overdue } from './pages/Overdue';
+import { PrintBills } from './pages/PrintBills';
 import { WaterRates } from './pages/WaterRates';
 import { WaterReadings } from './pages/WaterReadings';
 import type { Role } from './lib/types';
@@ -53,6 +54,7 @@ export function App() {
         <Route path="accounts/:id/make-member" element={<Only roles={['ADMIN', 'STAFF']}><AccountForm makeMember /></Only>} />
         <Route path="water" element={<WaterReadings />} />
         <Route path="water/overdue" element={<Overdue />} />
+        <Route path="water/print" element={<PrintBills />} />
         <Route path="water/bills/:id" element={<BillNotice />} />
         <Route path="settings/water-rates" element={<Only roles={['ADMIN']}><WaterRates /></Only>} />
         <Route path="cashier" element={<Cashier />} />

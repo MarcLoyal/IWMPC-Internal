@@ -85,6 +85,26 @@ own price) is available as an option when changing rates.
   by date range and product.
 - **Not yet**: stock / inventory, and patronage refund. Purchases stay linked to accounts for the refund.
 
+## Printing water bills
+
+*Meter Readings → Print Bills* prints IWMPC's **WATER SERVICE BILLING** form, 4 bills on each sheet
+(2 × 2) with dotted cut lines, on Short bond (Letter) or Long bond (8.5 × 13).
+
+- Choose the billing month, areas, *All bills* or *Unpaid only*, and the order (area then name, or
+  meter number). A summary shows the number of bills and pages per area, and lists active
+  connections with no reading for that month. Optionally one PDF per area.
+- Each bill shows this month, unpaid earlier months (with penalty), any part payment, and the
+  **TOTAL AMOUNT DUE**, worked out on the server so it matches the account exactly. More than 5
+  unpaid earlier months are combined into one row.
+- The header, phone line, due day and the three signatories come from Settings → *Printed Water Bills*.
+- Every print is recorded (who and when); reprints are always allowed and look the same.
+- A single bill prints from the account's customer card (*Print bill*) or the bill pop-up.
+- **How large batches work:** the server sends the figures 500 bills at a time and the PDF is made in
+  the browser, so Vercel's time and size limits never apply. About 1,200 bills take ~5 seconds and
+  make a ~1.5 MB PDF. The PDF code (with an embedded font that has the ₱ sign) loads only when printing.
+- **Due date rule** (Settings → Water Billing): new bills are due on a set day of the month after the
+  billing month (default 15), or a number of days after the reading. Existing bills keep their date.
+
 ## Tech
 
 React + TypeScript + Vite + Tailwind (`client/`), Node + Express + TypeScript (`server/`),

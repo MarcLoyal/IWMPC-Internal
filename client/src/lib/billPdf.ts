@@ -264,7 +264,19 @@ export async function makeBillsPdf(header: PrintHeader, bills: PrintBill[], asse
   const regular: PDFFont = await pdf.embedFont(assets.regular, { subset: true });
   const bold: PDFFont = await pdf.embedFont(assets.bold, { subset: true });
   const logo: PDFImage | null = assets.logo ? await pdf.embedPng(assets.logo) : null;
-  const measure: Measure = { width: (t, size, b) => (b ? bold : regular).widthOfTextAtSize(t, size) };
+  // Text widths are remembered: the same header, labels and names are measured again and again.
+  const widths = new Map<string, number>();
+  const measure: Measure = {
+    width: (t, size, b) => {
+      const key = `${b ? 1 : 0}|${size}|${t}`;
+      let w = widths.get(key);
+      if (w === undefined) {
+        w = (b ? bold : regular).widthOfTextAtSize(t, size);
+        widths.set(key, w);
+      }
+      return w;
+    },
+  };
   const black = rgb(0, 0, 0);
 
   let page: PDFPage | null = null;

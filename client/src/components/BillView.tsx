@@ -13,6 +13,7 @@ export interface BillView {
   previousMonths: string[];
   totalDue: string;
   coop: { name: string; address: string; cdaNo: string };
+  lastPrinted: { at: string; by: string } | null;
 }
 
 function Line({ label, children, strong = false }: { label: string; children: React.ReactNode; strong?: boolean }) {
