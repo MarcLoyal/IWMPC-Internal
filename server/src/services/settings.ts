@@ -5,9 +5,24 @@ export const SETTING_DEFAULTS = {
   coop_name: 'Inicbulan Waterworks Multi-purpose Cooperative',
   coop_address: 'Inicbulan, Bauan, Batangas',
   coop_cda_no: '9520-04002341',
+  coop_phone: '(043) 740-0767',
+  coop_mobile: '0910-4918-512',
+  // Printed bills: paper size and the three signatories.
+  bill_paper: 'LETTER',
+  bill_preparer_name: 'Alfa M. Mahiya',
+  bill_preparer_title: 'Billing Officer',
+  bill_cashier_name: 'Emard B. Ramos',
+  bill_cashier_title: 'Cashier',
+  bill_manager_name: 'Marino R. Abanador',
+  bill_manager_title: 'General Manager',
   membership_fee: '0.00',
   installation_fee: '0.00',
   // Water billing. These apply to bills created from now on; existing bills keep their own terms.
+  // How a new bill's due date is set: 'DAY_OF_NEXT_MONTH' = day water_due_day of the month after the
+  // billing month (an October reading is due November 15), or 'DAYS_AFTER_READING' = water_due_days
+  // after the reading date. Bills already made keep their own due date.
+  water_due_rule: 'DAY_OF_NEXT_MONTH',
+  water_due_day: '15',
   water_due_days: '15',
   water_penalty_type: 'PERCENT',
   water_penalty_value: '10',

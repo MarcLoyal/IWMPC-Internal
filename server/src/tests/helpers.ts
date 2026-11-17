@@ -19,6 +19,8 @@ export async function resetDb() {
   await ensureDefaultSettings(prisma);
   await ensureDefaultRates(prisma);
   await prisma.setting.update({ where: { key: 'membership_fee' }, data: { value: '500.00' } });
+  // Most water tests were written for 'due 15 days after the reading'. The default rule has its own tests.
+  await prisma.setting.update({ where: { key: 'water_due_rule' }, data: { value: 'DAYS_AFTER_READING' } });
   await prisma.setting.update({ where: { key: 'installation_fee' }, data: { value: '3500.00' } });
   for (const role of ['ADMIN', 'CASHIER', 'STAFF', 'BOARD'] as Role[]) {
     await prisma.user.create({
