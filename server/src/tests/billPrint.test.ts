@@ -80,7 +80,7 @@ describe('what is printed on each bill', () => {
     await read(staff, pedro.connectionId, 1090);
     const bill = (await bills(staff)).bills[0];
     expect(bill.rows.map((r: { kind: string }) => r.kind)).toEqual(['COMBINED', 'EARLIER', 'EARLIER', 'EARLIER', 'EARLIER', 'EARLIER', 'CURRENT']);
-    expect(bill.rows[0]).toMatchObject({ month: expect.stringMatching(/^Earlier months \(/), cubicMeters: 30, withPenalty: true });
+    expect(bill.rows[0]).toMatchObject({ month: expect.stringMatching(/^\w{3}-\w{3} \d{4}$|^\w{3} \d{4}-\w{3} \d{4}$/), cubicMeters: 30, withPenalty: true });
     // 8 overdue months of 10 cu.m (186.50 + 18.65 penalty) + this month's 186.50
     expect(bill.totalDue).toBe((8 * 205.15 + 186.5).toFixed(2));
     const owed = (await staff.get(`/api/accounts/${(await prisma.waterConnection.findUniqueOrThrow({ where: { id: pedro.connectionId } })).accountId}`)).body.water.totalDue;

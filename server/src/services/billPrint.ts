@@ -59,6 +59,11 @@ export interface PrintOptions {
 const zero = () => new Prisma.Decimal(0);
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const shortMonth = (period: string) => `${MONTHS[Number(period.slice(5)) - 1]} ${period.slice(0, 4)}`;
+/** "Jan-Mar 2026", or "Nov 2025-Mar 2026" across a new year. */
+const monthRange = (from: string, to: string) =>
+  from.slice(0, 4) === to.slice(0, 4)
+    ? `${MONTHS[Number(from.slice(5)) - 1]}-${MONTHS[Number(to.slice(5)) - 1]} ${to.slice(0, 4)}`
+    : `${shortMonth(from)}-${shortMonth(to)}`;
 
 function ordinal(n: number): string {
   const s = n % 100 >= 11 && n % 100 <= 13 ? 'th' : ({ 1: 'st', 2: 'nd', 3: 'rd' } as Record<number, string>)[n % 10] ?? 'th';
@@ -124,7 +129,7 @@ export async function buildPrintBills(opts: PrintOptions | { billIds: number[] }
     if (combine.length) {
       rows.push({
         kind: 'COMBINED',
-        month: `Earlier months (${shortMonth(combine[0].bill.period)} - ${shortMonth(combine[combine.length - 1].bill.period)})`,
+        month: monthRange(combine[0].bill.period, combine[combine.length - 1].bill.period),
         cubicMeters: combine.reduce((n, e) => n + e.bill.cubicMeters, 0),
         amount: combine.reduce((sum, e) => sum.plus(e.state.balance), zero()).toFixed(2),
         withPenalty: combine.some((e) => e.state.penalty.gt(0)),
