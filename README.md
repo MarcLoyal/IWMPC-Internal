@@ -105,6 +105,29 @@ own price) is available as an option when changing rates.
 - **Due date rule** (Settings → Water Billing): new bills are due on a set day of the month after the
   billing month (default 15), or a number of days after the reading. Existing bills keep their date.
 
+## Signatures and the 2-month notice
+
+- **Signatures** (Settings → Signatures on Printed Bills, Admin only): upload a PNG for each signatory of
+  the monthly bill and of the notice. A white background is removed and the edges trimmed on the
+  server. Images are stored in a **private Supabase Storage bucket** (`signatures`, created on first use)
+  and read only by the server with the service key; when Supabase is not configured (local, tests)
+  they are kept in the `signature_images` table. They reach a browser only inside the print data, to
+  be drawn into the PDF. There is no public link; only Admins see a small preview. Each signatory has
+  a *Print signature* switch; with it off (or no image) the name prints with a blank line. Every
+  upload, replacement, removal and switch is in the audit log.
+- **Who can print bills:** Admin, Staff and Cashier (checked on the server). Board can view bills but
+  not print them, so never receives signatures. Note: anyone who can print can save the PDF.
+- **2-month unpaid notice:** accounts with 2 or more months owed (counting the month being billed;
+  Settings → *Printed 2-Month Notice*) get the notice instead of the monthly bill: MONTH / CONSUMPTION /
+  AMOUNT w/o PENALTY / PENALTY / TOTAL AMOUNT per unpaid month and a TOTAL row, the due date (no
+  penalty), the disconnection date (due date + days from Settings, or one date for the whole batch),
+  the reconnection fee note, and its own signatories and phone line. 1 per landscape page or 2 per page.
+  Print Bills has *Which form*: monthly bills, notices, or both (two PDFs).
+- **Money settings** (penalty, reconnection fee) need a reason; every change is kept in
+  `setting_changes` and shown under *History of changes*. New values apply to bills made afterwards.
+- **Vercel variables for signature storage:** `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY`
+  (Supabase → Project Settings → API). Without them signatures are kept in the database.
+
 ## Tech
 
 React + TypeScript + Vite + Tailwind (`client/`), Node + Express + TypeScript (`server/`),

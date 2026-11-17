@@ -5,7 +5,7 @@ import { formatDateTime } from '../lib/format';
 import type { Area } from '../lib/types';
 import { useLoad } from '../lib/useLoad';
 import { periodLabel } from '../lib/water';
-import type { Paper, PrintHeader } from '../lib/billPdf';
+import type { NoticeHeader, Paper, PrintHeader } from '../lib/billPdf';
 import { buildPdf, download, fetchBills, openPrintWindow, recordPrinted, showPdf } from '../lib/printBills';
 import { Button, Card, Field, LinkButton, Loading, Notice, PageHeader } from '../components/ui';
 
@@ -14,10 +14,13 @@ interface Summary {
   periods: string[];
   areas: Area[];
   header: PrintHeader;
+  notice: NoticeHeader;
   bills: number;
+  monthlyBills: number;
+  notices: number;
   pages: number;
   pagesPerArea: number;
-  byArea: { id: number; name: string; bills: number }[];
+  byArea: { id: number; name: string; bills: number; monthly: number; notices: number }[];
   missing: { accountId: number; name: string; area: string; meterNo: string }[];
 }
 
@@ -37,11 +40,16 @@ export function PrintBills() {
   const areaIds = (params.get('areaIds') ?? '').split(',').filter(Boolean);
   const which = params.get('which') === 'unpaid' ? 'unpaid' : 'all';
   const sort = params.get('sort') === 'meter' ? 'meter' : 'area';
+  // Which form: monthly bills, 2-month notices, or both (two separate PDFs).
+  const form = params.get('form') === 'bill' ? 'bill' : params.get('form') === 'notice' ? 'notice' : 'both';
+  const disconnectDate = params.get('disconnectDate') ?? '';
   const query = new URLSearchParams();
   if (period) query.set('period', period);
   if (areaIds.length) query.set('areaIds', areaIds.join(','));
   if (which === 'unpaid') query.set('which', 'unpaid');
   if (sort === 'meter') query.set('sort', 'meter');
+  if (form !== 'both') query.set('form', form);
+  if (disconnectDate) query.set('disconnectDate', disconnectDate);
   const summary = useLoad<Summary>(`/water/print/summary?${query}`);
   const data = summary.data;
 
@@ -77,31 +85,41 @@ export function PrintBills() {
     setError('');
     setResult(null);
     // One file: open the window now, while the click still counts, then fill it when ready.
-    const win = perArea ? null : openPrintWindow();
+    // Only one file opens by itself; with several (per area, or bills and notices) they are listed.
+    const win = perArea || form === 'both' ? null : openPrintWindow();
     try {
       setBusy('Getting the bills…');
       const q = new URLSearchParams(query);
       q.set('period', data.period);
-      const { header, bills } = await fetchBills(q, (done, total) => setBusy(`Getting the bills… ${done.toLocaleString('en-US')} of ${total.toLocaleString('en-US')}`));
-      const base = `water-bills-${data.period}`;
-      const files: Result['files'] = [];
-      if (perArea) {
-        for (const area of data.byArea) {
-          const mine = bills.filter((b) => b.area === area.name);
-          if (!mine.length) continue;
-          setBusy(`Making the PDF for ${area.name}…`);
-          const url = URL.createObjectURL(await buildPdf(header, mine, chosenPaper));
-          urls.current.push(url);
-          files.push({ name: `${base}-${area.name.toLowerCase().replace(/\s+/g, '-')}.pdf`, url, bills: mine.length });
+      const { header, noticeHeader, signatures, bills } = await fetchBills(q, (done, total) =>
+        setBusy(`Getting the bills… ${done.toLocaleString('en-US')} of ${total.toLocaleString('en-US')}`),
+      );
+      const job = { header, noticeHeader, signatures, bills };
+      const forms = (['BILL', 'NOTICE'] as const).filter((f) => (f === 'BILL' ? form !== 'notice' : form !== 'bill'));
+      const groups: { label: string; slug: string; form: 'BILL' | 'NOTICE'; list: typeof bills }[] = [];
+      for (const f of forms) {
+        const ofForm = bills.filter((b) => b.form === f);
+        const kind = f === 'NOTICE' ? 'notices' : 'bills';
+        if (perArea) {
+          for (const area of data.byArea) {
+            const list = ofForm.filter((b) => b.area === area.name);
+            if (list.length) groups.push({ label: `${area.name} ${kind}`, slug: `${kind}-${area.name.toLowerCase().replace(/\s+/g, '-')}`, form: f, list });
+          }
+        } else if (ofForm.length) {
+          groups.push({ label: f === 'NOTICE' ? '2-month notices' : 'Monthly bills', slug: kind, form: f, list: ofForm });
         }
-      } else {
-        setBusy(`Making the PDF (${bills.length.toLocaleString('en-US')} bills)…`);
-        const blob = await buildPdf(header, bills, chosenPaper);
-        const name = `${base}${areaIds.length === 1 ? `-${data.byArea[0]?.name.toLowerCase().replace(/\s+/g, '-') ?? ''}` : ''}.pdf`;
-        const url = showPdf(win, blob, name);
-        urls.current.push(url);
-        files.push({ name, url, bills: bills.length });
       }
+      const files: Result['files'] = [];
+      for (const g of groups) {
+        setBusy(`Making the PDF: ${g.label} (${g.list.length.toLocaleString('en-US')})…`);
+        const blob = await buildPdf(job, g.list, g.form, chosenPaper);
+        const name = `water-${g.slug}-${data.period}.pdf`;
+        // A single file opens straight away in the window opened on click; several are listed.
+        const url = groups.length === 1 ? showPdf(win, blob, name) : URL.createObjectURL(blob);
+        urls.current.push(url);
+        files.push({ name, url, bills: g.list.length });
+      }
+      if (groups.length !== 1) win?.close();
       await recordPrinted(bills.map((b) => b.billId));
       setResult({ at: new Date().toISOString(), bills: bills.length, files });
     } catch (err) {
@@ -162,6 +180,42 @@ export function PrintBills() {
               </div>
             </div>
 
+            <div>
+              <div className="label">Which form</div>
+              <div className="flex flex-wrap gap-2">
+                {(
+                  [
+                    ['', 'Both (two PDFs)'],
+                    ['bill', 'Monthly bills'],
+                    ['notice', '2-month notices'],
+                  ] as const
+                ).map(([value, label]) => (
+                  <button key={value} type="button" aria-pressed={(value || 'both') === form} onClick={() => set('form', value)} className={choice((value || 'both') === form)}>
+                    {label}
+                  </button>
+                ))}
+              </div>
+              <p className="mt-1 text-sm text-slate-600">
+                Accounts with {data.notice.thresholdMonths} or more unpaid months get the 2-month notice instead of the monthly bill.
+              </p>
+            </div>
+
+            {form !== 'bill' && (
+              <Field
+                label="Disconnection date on the notices"
+                hint={disconnectDate ? 'This date is printed on every notice in this batch.' : 'Leave blank to use each account’s due date plus the days set in Settings.'}
+              >
+                <span className="flex flex-wrap items-center gap-2">
+                  <input className="input w-auto" type="date" value={disconnectDate} onChange={(e) => set('disconnectDate', e.target.value)} />
+                  {disconnectDate && (
+                    <button type="button" className="font-semibold text-brand-700 underline" onClick={() => set('disconnectDate', '')}>
+                      Use the rule instead
+                    </button>
+                  )}
+                </span>
+              </Field>
+            )}
+
             <div className="grid gap-4 sm:grid-cols-2">
               <div>
                 <div className="label">Which bills</div>
@@ -200,13 +254,26 @@ export function PrintBills() {
             <Card className="p-5">
               <div className="text-sm font-semibold uppercase tracking-wide text-slate-500">{periodLabel(data.period)}</div>
               <div className="mt-1 text-3xl font-bold tabular-nums">
-                {data.bills.toLocaleString('en-US')} {data.bills === 1 ? 'bill' : 'bills'}
+                {data.bills.toLocaleString('en-US')} {data.bills === 1 ? 'account' : 'accounts'}
+              </div>
+              <div className="text-lg font-semibold text-slate-800">
+                {[
+                  form !== 'notice' && `${data.monthlyBills.toLocaleString('en-US')} monthly ${data.monthlyBills === 1 ? 'bill' : 'bills'}`,
+                  form !== 'bill' && `${data.notices.toLocaleString('en-US')} ${data.notices === 1 ? 'notice' : 'notices'}`,
+                ]
+                  .filter(Boolean)
+                  .join(', ')}
               </div>
               <div className="text-lg text-slate-700">
                 on {pages?.toLocaleString('en-US')} {pages === 1 ? 'page' : 'pages'}
               </div>
               {data.byArea.length > 0 && (
                 <p className="mt-2 text-slate-600">{data.byArea.map((a) => `${a.name} ${a.bills}`).join(', ')}</p>
+              )}
+              {form !== 'bill' && data.notices > 0 && (
+                <p className="mt-1 text-sm text-slate-600">
+                  Notices: {data.notice.perPage === 1 ? '1 per page, landscape' : '2 per page'} (Settings).
+                </p>
               )}
               <Button variant="primary" className="mt-4 w-full py-3.5 text-lg" onClick={print} disabled={!!busy || data.bills === 0}>
                 {busy ? 'Preparing…' : 'Print / Download PDF'}
@@ -228,7 +295,7 @@ export function PrintBills() {
                     {result.bills.toLocaleString('en-US')} bills ready ({formatDateTime(result.at)}).
                   </div>
                   <div className="font-normal">
-                    {result.files.length === 1 ? 'The PDF opened in a new tab. Print it from there.' : 'Open each area’s PDF and print it.'} You can print again anytime.
+                    {result.files.length === 1 ? 'The PDF opened in a new tab. Print it from there.' : 'Open each PDF below and print it.'} You can print again anytime.
                   </div>
                   <ul className="mt-2 space-y-1">
                     {result.files.map((f) => (

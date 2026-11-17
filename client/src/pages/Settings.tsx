@@ -2,7 +2,9 @@ import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
 import { api, errorMessage } from '../lib/api';
 import type { Area, Settings as SettingsData } from '../lib/types';
 import { useLoad } from '../lib/useLoad';
-import { Button, Card, Field, LinkButton, Loading, Notice, PageHeader, buttonClass } from '../components/ui';
+import { Button, Card, Field, LinkButton, Loading, Modal, Notice, PageHeader, buttonClass } from '../components/ui';
+import { SignatureSettings } from '../components/SignatureSettings';
+import { formatDateTime } from '../lib/format';
 
 type Values = Record<string, string>;
 
@@ -14,18 +16,28 @@ function Section({
   settings,
   onSaved,
   children,
+  reasonKeys = [],
 }: {
   title: string;
   help?: string;
   keys: (keyof SettingsData)[];
   settings: SettingsData;
   onSaved: () => void;
+  /** Money settings: changing one needs a reason, and their history can be shown. */
+  reasonKeys?: (keyof SettingsData)[];
   children: (values: Values, set: (key: string) => (e: { target: { value: string } }) => void) => ReactNode;
 }) {
   const [values, setValues] = useState<Values>({});
   const [error, setError] = useState('');
   const [saved, setSaved] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [reason, setReason] = useState('');
+  const [showHistory, setShowHistory] = useState(false);
+  const moneyChanged = reasonKeys.some((k) => {
+    const a = values[k as string];
+    const b = settings[k] as string;
+    return a !== undefined && a !== b && !(a.trim() !== '' && Number(a) === Number(b));
+  });
 
   useEffect(() => {
     setValues(Object.fromEntries(keys.map((k) => [k, settings[k]])));
@@ -42,8 +54,9 @@ function Section({
     setSaving(true);
     setError('');
     try {
-      await api.put('/settings', values);
+      await api.put('/settings', { ...values, ...(moneyChanged ? { reason } : {}) });
       setSaved(true);
+      setReason('');
       onSaved();
     } catch (err) {
       setError(errorMessage(err));
@@ -58,6 +71,11 @@ function Section({
         <h2 className="text-xl font-bold">{title}</h2>
         {help && <p className="mt-1 text-slate-600">{help}</p>}
         <div className="mt-4">{children(values, set)}</div>
+        {moneyChanged && (
+          <Field label="Reason for the change (required)" hint="Bills already made keep the amounts they were made with." className="mt-4">
+            <input className="input" value={reason} onChange={(e) => setReason(e.target.value)} placeholder="e.g. Board resolution no. 12" />
+          </Field>
+        )}
         {error && (
           <Notice tone="error" className="mt-4">
             {error}
@@ -68,9 +86,63 @@ function Section({
             {saving ? 'Saving…' : 'Save'}
           </button>
           {saved && <span className="font-semibold text-emerald-700">✓ Saved</span>}
+          {reasonKeys.length > 0 && (
+            <button type="button" className="ml-auto font-semibold text-brand-700 underline" onClick={() => setShowHistory(true)}>
+              History of changes
+            </button>
+          )}
         </div>
       </form>
+      {showHistory && <SettingHistory keys={reasonKeys as string[]} onClose={() => setShowHistory(false)} />}
     </Card>
+  );
+}
+
+const HISTORY_LABEL: Record<string, string> = {
+  water_penalty_type: 'Kind of late penalty',
+  water_penalty_value: 'Late penalty',
+  reconnection_fee: 'Reconnection fee',
+};
+
+/** Old and new values, who changed them, when and why. */
+function SettingHistory({ keys, onClose }: { keys: string[]; onClose: () => void }) {
+  const { data, error, loading } = useLoad<{ history: { id: number; key: string; oldValue: string | null; newValue: string; reason: string; changedBy: string | null; changedAt: string }[] }>(
+    `/settings/history?keys=${keys.join(',')}`,
+  );
+  return (
+    <Modal
+      title="History of changes"
+      wide
+      onClose={onClose}
+      footer={
+        <Button variant="primary" onClick={onClose}>
+          Close
+        </Button>
+      }
+    >
+      {loading && !data && <Loading />}
+      {error && <Notice tone="error">{error}</Notice>}
+      {data && data.history.length === 0 && <p className="text-slate-600">No changes have been recorded yet.</p>}
+      {data && data.history.length > 0 && (
+        <ul className="divide-y divide-slate-200">
+          {data.history.map((h) => (
+            <li key={h.id} className="py-3">
+              <div className="flex flex-wrap items-baseline justify-between gap-x-4">
+                <span className="font-bold">{HISTORY_LABEL[h.key] ?? h.key}</span>
+                <span className="tabular-nums">
+                  <span className="text-slate-500">{h.oldValue ?? '—'} → </span>
+                  <strong>{h.newValue}</strong>
+                </span>
+              </div>
+              <div className="text-sm text-slate-600">
+                {formatDateTime(h.changedAt)} · {h.changedBy ?? '—'}
+                {h.reason && ` · Reason: ${h.reason}`}
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+    </Modal>
   );
 }
 
@@ -198,6 +270,7 @@ export function Settings() {
             title="Water Billing"
             help="These apply to bills made from now on. Bills already made keep their own due date and penalty. Water rates are on their own page (button above)."
             keys={['water_due_rule', 'water_due_day', 'water_due_days', 'water_penalty_type', 'water_penalty_value', 'water_disconnect_months']}
+            reasonKeys={['water_penalty_type', 'water_penalty_value']}
             settings={data}
             onSaved={reload}
           >
@@ -235,8 +308,8 @@ export function Settings() {
           </Section>
 
           <Section
-            title="Printed Water Bills"
-            help="Shown on every printed bill."
+            title="Printed Monthly Bill"
+            help="Shown on every printed monthly bill."
             keys={['coop_phone', 'coop_mobile', 'bill_paper', 'bill_preparer_name', 'bill_preparer_title', 'bill_cashier_name', 'bill_cashier_title', 'bill_manager_name', 'bill_manager_title']}
             settings={data}
             onSaved={reload}
@@ -274,6 +347,68 @@ export function Settings() {
               </div>
             )}
           </Section>
+
+          <Section
+            title="Printed 2-Month Notice"
+            help="Accounts with this many unpaid months (counting the month being billed) get this notice instead of the monthly bill."
+            keys={[
+              'notice_phone_line',
+              'notice_threshold_months',
+              'notice_per_page',
+              'disconnect_days_after_due',
+              'reconnection_fee',
+              'notice_preparer_name',
+              'notice_preparer_title',
+              'notice_cashier_name',
+              'notice_cashier_title',
+              'notice_manager_name',
+              'notice_manager_title',
+            ]}
+            reasonKeys={['reconnection_fee']}
+            settings={data}
+            onSaved={reload}
+          >
+            {(v, set) => (
+              <div className="grid gap-4 sm:grid-cols-2">
+                <Field label="Phone line" hint="Printed under the CDA number." className="sm:col-span-2">
+                  <input className="input" value={v.notice_phone_line ?? ''} onChange={set('notice_phone_line')} />
+                </Field>
+                <Field label="Unpaid months that start the notice">
+                  <input className="input tabular-nums" inputMode="numeric" value={v.notice_threshold_months ?? ''} onChange={set('notice_threshold_months')} />
+                </Field>
+                <Field label="Notices per page">
+                  <select className="input" value={v.notice_per_page ?? '1'} onChange={set('notice_per_page')}>
+                    <option value="1">1 per page (landscape, like the paper form)</option>
+                    <option value="2">2 per page</option>
+                  </select>
+                </Field>
+                <Field label="Disconnection date: days after the due date" hint="Can be changed for a whole batch when printing.">
+                  <input className="input tabular-nums" inputMode="numeric" value={v.disconnect_days_after_due ?? ''} onChange={set('disconnect_days_after_due')} />
+                </Field>
+                <Field label="Reconnection fee (₱)">
+                  <input className="input tabular-nums" inputMode="decimal" value={v.reconnection_fee ?? ''} onChange={set('reconnection_fee')} />
+                </Field>
+                {(
+                  [
+                    ['notice_preparer', 'Prepared by'],
+                    ['notice_cashier', 'Second signature'],
+                    ['notice_manager', 'Third signature'],
+                  ] as const
+                ).map(([key, label]) => (
+                  <div key={key} className="contents">
+                    <Field label={`${label}: name`}>
+                      <input className="input" value={v[`${key}_name`] ?? ''} onChange={set(`${key}_name`)} />
+                    </Field>
+                    <Field label={`${label}: title`}>
+                      <input className="input" value={v[`${key}_title`] ?? ''} onChange={set(`${key}_title`)} />
+                    </Field>
+                  </div>
+                ))}
+              </div>
+            )}
+          </Section>
+
+          <SignatureSettings names={data as unknown as Record<string, string>} />
 
           <Section
             title="Rice & LPG"
