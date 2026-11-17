@@ -282,3 +282,25 @@ describe('cancelling an invoice', () => {
     expect((await cashier.post('/api/invoices').send(invoice(c.accountId, '', [{ type: 'OTHER', amount: '10', description: 'x' }]))).body.error).toMatch(/Invoice No/);
   });
 });
+
+describe('Invoice booklet settings', () => {
+  it('lets the Admin set the ATP and series, used by the guide and the series check', async () => {
+    const admin = await loginAs('ADMIN');
+    const cashier = await loginAs('CASHIER');
+    const bad = await admin.put('/api/settings').send({ invoice_series_from: '50000', invoice_series_to: '40000' });
+    expect(bad.status).toBe(400);
+    expect(bad.body.error).toMatch(/smaller/);
+    expect((await admin.put('/api/settings').send({ invoice_atp_date: 'last week' })).status).toBe(400);
+    expect((await cashier.put('/api/settings').send({ invoice_atp_no: 'X' })).status).toBe(403);
+
+    const ok = await admin.put('/api/settings').send({ invoice_atp_no: 'OCN-123', invoice_atp_date: '2025-03-01', invoice_series_from: '100', invoice_series_to: '200' });
+    expect(ok.status).toBe(200);
+    const check = await cashier.get('/api/invoices/check?number=150');
+    expect(check.body.warning).toBeNull();
+    expect((await cashier.get('/api/invoices/check?number=25001')).body.warning).toMatch(/series/);
+    const res = await cashier.post('/api/invoices').send({ accountId: null, walkInName: '', number: '150', items: [{ type: 'SALE', items: [{ unitId: (await prisma.productUnit.findFirstOrThrow()).id, quantity: '1' }] }] });
+    expect(res.status).toBe(201);
+    expect(res.body.guide.header.atpNo).toBe('OCN-123');
+    expect(res.body.guide.header.atpDate).toBe('2025-03-01');
+  });
+});

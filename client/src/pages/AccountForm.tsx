@@ -318,7 +318,7 @@ export function AccountForm({ makeMember = false }: { makeMember?: boolean }) {
               <p className="text-slate-600 sm:col-span-6">
                 The <strong>membership fee</strong>
                 {settings.data && <> ({peso(settings.data.membership_fee)})</>} and the <strong>initial paid-up capital</strong> are
-                received at the Cashier, each with its own OR number. They then show on this account automatically.
+                received at the Cashier, each written on the invoice. They then show on this account automatically.
               </p>
             </Section>
           </>

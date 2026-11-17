@@ -188,7 +188,9 @@ export interface Payment {
   accountNumber?: string;
   type: PaymentType;
   amount: string;
+  /** The invoice number. */
   orNumber: string;
+  invoiceId?: number | null;
   waterBillPeriod?: string | null;
   paymentDate: string;
   description: string;
@@ -279,6 +281,12 @@ export interface Settings {
   member_no_prefix: string;
   member_no_padding: string;
   member_no_next: string;
+  invoice_atp_no: string;
+  invoice_atp_date: string;
+  invoice_series_from: string;
+  invoice_series_to: string;
+  invoice_tin_line: string;
+  invoice_phone_line: string;
   nextAccountNumber: string;
   nextMemberNumber: string;
 }
@@ -288,6 +296,8 @@ export interface HomeSummary {
   collections: { total: string; count: number };
   accounts: { total: number; members: number; nonMembers: number };
   overdueWater: { count: number; total: string };
+  /** Invoice numbers left in the booklet series; low when fewer than 2,000. */
+  invoices?: { remaining: number; to: number; low: boolean };
 }
 
 export interface DailyReport {

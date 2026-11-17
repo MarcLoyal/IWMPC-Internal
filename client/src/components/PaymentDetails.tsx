@@ -6,6 +6,7 @@ import { PAYMENT_TYPE, formatDate, formatDateTime, peso } from '../lib/format';
 import type { Payment } from '../lib/types';
 import { periodLabel } from '../lib/water';
 import { Badge, Button, Detail, Field, Modal, Notice } from './ui';
+import { SavedInvoiceGuide } from './InvoiceGuide';
 
 export function PaymentStatusBadge({ payment }: { payment: Payment }) {
   return payment.status === 'VOID' ? <Badge tone="gray">VOID</Badge> : <Badge tone="green">Paid</Badge>;
@@ -26,6 +27,7 @@ export function PaymentDetails({
   const [reason, setReason] = useState('');
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
+  const [guide, setGuide] = useState(false);
 
   async function confirmVoid() {
     setSaving(true);
@@ -59,6 +61,7 @@ export function PaymentDetails({
           </>
         ) : (
           <>
+            {payment.invoiceId && <Button onClick={() => setGuide(true)}>View Invoice Guide</Button>}
             {can('ADMIN') && !isVoid && (
               <Button variant="danger" onClick={() => setVoiding(true)}>
                 Void Payment
@@ -76,7 +79,7 @@ export function PaymentDetails({
         <PaymentStatusBadge payment={payment} />
       </div>
       <dl className="grid grid-cols-2 gap-x-6 gap-y-4">
-        <Detail label="OR Number">
+        <Detail label="Invoice No.">
           <span className="font-semibold tabular-nums">{payment.orNumber}</span>
         </Detail>
         <Detail label="Date">{formatDate(payment.paymentDate)}</Detail>
@@ -139,7 +142,7 @@ export function PaymentDetails({
       {voiding && (
         <div className="mt-5 rounded-lg border border-red-200 bg-red-50 p-4">
           <p className="mb-3 font-semibold text-red-900">
-            Voiding cancels this payment. It stays in the records marked VOID, with its OR number.
+            Voiding cancels the whole invoice: every payment written on it is voided. They stay in the records marked VOID, and the invoice number is marked CANCELLED and never used again.
             {payment.type === 'MEMBERSHIP_FEE' && ' The account will go back to Non-member.'}
             {payment.type === 'RICE_LPG' && ' For a Rice & LPG sale, every item in the sale is voided with it.'}
           </p>
@@ -153,6 +156,7 @@ export function PaymentDetails({
           {error}
         </Notice>
       )}
+      {guide && payment.invoiceId && <SavedInvoiceGuide invoiceId={payment.invoiceId} onClose={() => setGuide(false)} />}
     </Modal>
   );
 }

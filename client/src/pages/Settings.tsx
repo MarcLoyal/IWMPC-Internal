@@ -267,6 +267,37 @@ export function Settings() {
           </Section>
 
           <Section
+            title="Invoice Booklet"
+            help="The BIR Service Invoice booklets printed under the Authority to Print (ATP). The system does not print invoices; it only shows a guide to copy from."
+            keys={['invoice_atp_no', 'invoice_atp_date', 'invoice_series_from', 'invoice_series_to', 'invoice_tin_line', 'invoice_phone_line']}
+            settings={data}
+            onSaved={reload}
+          >
+            {(v, set) => (
+              <div className="grid gap-4 sm:grid-cols-2">
+                <Field label="ATP No.">
+                  <input className="input" value={v.invoice_atp_no ?? ''} onChange={set('invoice_atp_no')} />
+                </Field>
+                <Field label="Date the ATP was issued">
+                  <input className="input" type="date" value={v.invoice_atp_date ?? ''} onChange={set('invoice_atp_date')} />
+                </Field>
+                <Field label="First invoice number in the series">
+                  <input className="input tabular-nums" inputMode="numeric" value={v.invoice_series_from ?? ''} onChange={set('invoice_series_from')} />
+                </Field>
+                <Field label="Last invoice number in the series" hint="Home shows a warning when fewer than 2,000 numbers are left.">
+                  <input className="input tabular-nums" inputMode="numeric" value={v.invoice_series_to ?? ''} onChange={set('invoice_series_to')} />
+                </Field>
+                <Field label="TIN line on the invoice">
+                  <input className="input" value={v.invoice_tin_line ?? ''} onChange={set('invoice_tin_line')} />
+                </Field>
+                <Field label="Phone line on the invoice">
+                  <input className="input" value={v.invoice_phone_line ?? ''} onChange={set('invoice_phone_line')} />
+                </Field>
+              </div>
+            )}
+          </Section>
+
+          <Section
             title="Water Billing"
             help="These apply to bills made from now on. Bills already made keep their own due date and penalty. Water rates are on their own page (button above)."
             keys={['water_due_rule', 'water_due_day', 'water_due_days', 'water_penalty_type', 'water_penalty_value', 'water_disconnect_months']}
@@ -420,7 +451,7 @@ export function Settings() {
             {(v, set) => (
               <Field
                 label="Allow credit (utang)"
-                hint="When Yes, the Cashier can sell Rice & LPG to an account without payment. The amount is added to what the account owes and is paid later with an OR number."
+                hint="When Yes, the Cashier can sell Rice & LPG to an account without payment. The amount is added to what the account owes Each credit sale is written on a Charge Sales invoice."
                 className="sm:max-w-md"
               >
                 <select className="input" value={v.allow_credit ?? 'false'} onChange={set('allow_credit')}>

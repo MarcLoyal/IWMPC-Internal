@@ -78,7 +78,7 @@ function KindSection({ title, year, rows }: { title: string; year: string; rows:
             <th className="th py-2 text-right">Qty</th>
             <th className="th py-2 text-right">Price</th>
             <th className="th py-2 text-right">Amount</th>
-            <th className="th py-2">OR No.</th>
+            <th className="th py-2">Invoice No.</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-slate-100">

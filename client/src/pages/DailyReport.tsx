@@ -39,7 +39,7 @@ export function DailyReport() {
         <div className={loading ? 'opacity-60' : ''}>
           {data.orGaps.length > 0 && (
             <Notice tone="warning" className="mb-5">
-              <div className="font-bold">⚠ Some OR numbers are missing for this day. Please check the receipt booklet.</div>
+              <div className="font-bold">⚠ Some invoice numbers are missing for this day. Please check the invoice booklet.</div>
               <ul className="mt-1 list-disc pl-6 font-normal">
                 {data.orGaps.map((g) => (
                   <li key={g.after}>
@@ -134,7 +134,7 @@ export function DailyReport() {
                 <table className="w-full min-w-[680px] print:min-w-0">
                   <thead className="border-b border-slate-200 bg-slate-50">
                     <tr>
-                      <th className="th">OR No.</th>
+                      <th className="th">Invoice No.</th>
                       <th className="th">Name</th>
                       <th className="th">Type</th>
                       <th className="th">Recorded by</th>

@@ -1,14 +1,14 @@
 # IWMPC Internal System
 
 Internal system for the Inicbulan Waterworks Multi-purpose Cooperative: accounts, cashier
-collections recorded with the OR number from IWMPC's own receipt booklet, and (in later phases)
+collections recorded with the Invoice No. from IWMPC's own BIR Service Invoice booklet, and (in later phases)
 water billing and loans.
 
 **Current phase: 1A + 1B + 2** — Accounts, Cashier, Home, Settings, Users, Water, and Rice & LPG sales.
 
 | Phase | Contents | Status |
 |---|---|---|
-| 1A | Accounts (member / non-member), basic connections, Cashier with OR numbers, Daily Collection Report, Home, Settings, Users | Built |
+| 1A | Accounts (member / non-member), basic connections, Cashier with Invoice Nos., Daily Collection Report, Home, Settings, Users | Built |
 | 1B | Water: rates, meter readings, bills, customer card, overdue list | Built |
 | 1C | Loans | Not started |
 | 2 | Rice & LPG sales at the Cashier, admin-only prices with history | Built |
@@ -24,11 +24,12 @@ water billing and loans.
 - **Make a Member**: staff click *Make a Member* (blocked without an active connection, checked on the
   server), the cashier records the membership fee in full, and the account becomes a Member with the
   next member number. Voiding that payment returns the account to Non-member; the number stays reserved.
-- **Cashier**: pick account → see what they owe → payment type (Installation Fee, Membership Fee,
-  Share Capital, Other) → amount → OR number → "Is this correct?" → save. Duplicate OR numbers are blocked with a
-  message saying who and when. Find a payment by OR number. Void is Admin only, with a reason.
-- **Daily Collection Report**: every payment of the day with OR numbers, totals per type, grand total,
-  missing OR numbers flagged. Printable.
+- **Cashier**: pick account → see what they owe → add each thing being paid to one invoice → Invoice No.
+  → *Review Payment* (the invoice guide pops up) → save. See *BIR Service Invoices* below. Duplicate
+  numbers are blocked with a message saying who and when. Find a payment by Invoice No. Void is Admin
+  only, with a reason.
+- **Daily Collection Report**: every payment of the day with Invoice Nos., totals per type, grand total,
+  missing numbers flagged. Printable.
 - **Settings** (Admin): cooperative info, fees, account / member number format, areas, users and roles.
 - **Audit trail**: every change is stored in `audit_log` with who, what, when, before and after.
 
@@ -42,7 +43,7 @@ water billing and loans.
 - **Bills**: Paid (green) / Due soon, within 5 days (yellow) / Overdue (red). The late penalty is added
   when the bill amount is not fully paid on or before the due date. Printable bill / notice with the
   previous balance.
-- **Cashier**: Water Bill payment type, pre-filled with what is owed; part payments allowed; the OR
+- **Cashier**: Water Bill payment type, pre-filled with what is owed; part payments allowed; the Invoice
   number lands on the customer card.
 - **Lists**: overdue accounts by area (printable) and disconnection candidates (view only).
 - **Rates** (Admin): IWMPC's approved tariff is loaded at setup. *Change Rates* adds a new version that
@@ -70,15 +71,15 @@ own price) is available as an option when changing rates.
   checks the Admin role on the server. Everyone else can see prices but not change them. Each price
   change needs a reason and is kept in the product's Price History (old and new price, who, when, why).
 - **Selling at the Cashier**: payment type *Rice & LPG* → pick the product (big buttons) → pick the unit →
-  quantity (decimals allowed) → the amount is worked out → add more items if needed → one OR number for
-  the whole sale → *Is this correct?* → save. The OR rules are the same as every other payment.
+  quantity (decimals allowed) → the amount is worked out → add more items if needed → added to the
+  invoice like any other payment, so one invoice can hold water, fees and rice/LPG together.
 - **Walk-in customer**: a buyer with no account (name optional). Counted in the day's collections and
   reports, but on no account.
 - **Past sales never change.** Each item keeps the product name, unit, quantity and price it was sold at.
 - **Voiding** the payment voids the whole sale; it stays visible, marked VOID, and leaves all totals.
 - **Credit (utang)**: Settings → *Allow credit*, OFF by default (the server refuses credit sales while it
-  is off). When ON, a credit sale has no OR number yet, appears in *What they owe*, and is paid later with
-  an OR number. Walk-ins cannot buy on credit.
+  is off). When ON, a credit sale is written on its own CHARGE SALES invoice (number taken at the time of
+  sale), appears in *What they owe*, and is paid later on a new cash invoice. Walk-ins cannot buy on credit.
 - **On the account**: last Rice/LPG purchase on the Accounts list, a Rice & LPG card (bought this year),
   a printable Rice & LPG tab with yearly totals per item, and the sales in All Transactions.
 - **Reports**: Rice & LPG lines on the Daily Collection Report, and a printable *Rice & LPG Sales* report
@@ -130,6 +131,30 @@ own price) is available as an option when changing rates.
   Project Settings → API Keys. Server-side only; never in a `VITE_` variable. Without them signatures are
   kept in the database.
 
+## BIR Service Invoices
+
+IWMPC writes **handwritten** BIR Service Invoices from bound booklets (manual ATP). The system never
+prints an invoice; it shows a **guide** to copy from.
+
+- **One invoice per visit.** The cashier adds everything being paid (several water months, fees, share
+  capital, rice & LPG, other) and types the **Invoice No.** from the booklet. It is required and can be
+  used once only (checked on the server, also against old payment numbers). It is filled in with the
+  cashier's last number + 1. A number outside the ATP series (Settings → *Invoice Booklet*, default
+  25,001–40,000) gives a yellow warning but is allowed.
+- **Review Payment** opens the guide in a pop-up on the same page, nothing saved yet: *Go Back* or
+  *Yes, Save Payment*. After saving, the same pop-up shows *Saved* so the cashier can finish copying.
+- **The guide** mirrors the paper form: Registered Name (or the walk-in's name / "Walk-in customer"),
+  TIN, address, meter no., period, lines A–D, amount in words, total. It has a diagonal *Guide only –
+  not an invoice* watermark and no print or download button; printing shows only "This guide cannot be
+  printed. Use the BIR Service Invoice booklet."
+- **Where to see it again:** Payment Details → *View Invoice Guide*, Find by Invoice No., and *Open bill*
+  on the customer card (tabs *Invoice* and *Billing*: a paid bill opens on its invoice; an unpaid bill
+  shows the billing only).
+- **Cancelling:** an Admin voiding any payment on an invoice cancels the whole invoice (all its
+  payments, with a reason). The number is marked CANCELLED and never reused.
+- **Home** warns the Admin and Cashier when fewer than 2,000 numbers are left in the series.
+- "OR number" is now called **Invoice No.** everywhere on screen, including old payments.
+
 ## Tech
 
 React + TypeScript + Vite + Tailwind (`client/`), Node + Express + TypeScript (`server/`),
@@ -172,8 +197,8 @@ npm test
 ```
 
 Uses its own database (`TEST_DATABASE_URL`, default `iwmpc_test` on localhost), never the dev or
-preview database. Covers duplicate-OR blocking, voiding, the Make a Member rule, roles, search and
-filters, OR-gap detection and money formatting.
+preview database. Covers duplicate Invoice No. blocking, the invoice guide values, voiding, the Make a Member rule, roles, search and
+filters, invoice-number gap detection and money formatting.
 
 ## Deploying to Vercel + Supabase
 

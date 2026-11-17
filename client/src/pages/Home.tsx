@@ -44,7 +44,7 @@ function ComingCard({ label, phase }: { label: string; phase: string }) {
 }
 
 export function Home() {
-  const { user } = useAuth();
+  const { user, can } = useAuth();
   const { data, error, loading } = useLoad<HomeSummary>('/reports/home');
 
   return (
@@ -52,6 +52,14 @@ export function Home() {
       <PageHeader title={`Good day, ${user?.name ?? ''}`} subtitle={data ? formatLongDate(data.today) : undefined} />
       {error && <Notice tone="error">{error}</Notice>}
       {loading && !data && <Loading />}
+      {data?.invoices?.low && can('ADMIN', 'CASHIER') && (
+        <Notice tone="warning" className="mb-5">
+          <span className="font-bold">
+            Only {data.invoices.remaining.toLocaleString('en-US')} invoice numbers are left (up to {data.invoices.to.toLocaleString('en-US')}).
+          </span>{' '}
+          Please apply for a new Authority to Print and order new invoice booklets.
+        </Notice>
+      )}
       {data && (
         <div className="grid gap-5 sm:grid-cols-2">
           <SummaryCard

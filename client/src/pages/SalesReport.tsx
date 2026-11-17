@@ -162,7 +162,7 @@ export function SalesReport() {
                 <thead className="border-b border-slate-200 bg-slate-50">
                   <tr>
                     <th className="th rounded-tl-xl py-2">Date</th>
-                    <th className="th py-2">OR No.</th>
+                    <th className="th py-2">Invoice No.</th>
                     <th className="th py-2">Buyer</th>
                     <th className="th py-2">Item</th>
                     <th className="th py-2 text-right">Qty</th>

@@ -146,7 +146,7 @@ export function AccountProfile() {
             <>
               <div className="mt-1 text-3xl font-bold tabular-nums">{peso(lastPayment.amount)}</div>
               <div className="mt-1 text-slate-600">
-                {formatDate(lastPayment.paymentDate)} · {PAYMENT_TYPE[lastPayment.type]} · OR {lastPayment.orNumber}
+                {formatDate(lastPayment.paymentDate)} · {PAYMENT_TYPE[lastPayment.type]} · Invoice No. {lastPayment.orNumber}
               </div>
             </>
           ) : (
@@ -254,8 +254,8 @@ export function AccountProfile() {
                     ? `${account.sharesSubscribed ?? '—'} shares · ${account.sharesAmount !== null ? peso(account.sharesAmount) : '—'}`
                     : ''}
                 </Detail>
-                <Detail label="Share capital paid">{capitalPaid > 0 ? `${peso(capitalPaid)} · OR ${capitalOrs}` : 'None yet'}</Detail>
-                <Detail label="Membership fee">{feePayment ? `${peso(feePayment.amount)} · OR ${feePayment.orNumber}` : 'Not yet paid'}</Detail>
+                <Detail label="Share capital paid">{capitalPaid > 0 ? `${peso(capitalPaid)} · Invoice No. ${capitalOrs}` : 'None yet'}</Detail>
+                <Detail label="Membership fee">{feePayment ? `${peso(feePayment.amount)} · Invoice No. ${feePayment.orNumber}` : 'Not yet paid'}</Detail>
                 <div className={WIDE}>
                   <Detail label="Beneficiaries">
                     {account.beneficiaries.map((b) => (b.relationship ? `${b.name} (${b.relationship})` : b.name)).join(', ')}
@@ -363,7 +363,7 @@ export function AccountProfile() {
                   <tr>
                     <th className="th">Date</th>
                     <th className="th">Type</th>
-                    <th className="th">OR No.</th>
+                    <th className="th">Invoice No.</th>
                     <th className="th text-right">Amount</th>
                     <th className="th">Status</th>
                   </tr>

@@ -10,7 +10,7 @@ import { Badge, Card } from './ui';
 
 /**
  * IWMPC's paper Customer Card for one connection: a row per month (December at the top,
- * January at the bottom) with the reading, cu.m used, amount, and O.R. number.
+ * January at the bottom) with the reading, cu.m used, amount, and invoice number.
  */
 export function CustomerCard({ name, connection, bills }: { name: string; connection: Connection; bills: WaterBill[] }) {
   const thisYear = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Manila' }).slice(0, 4);
@@ -82,7 +82,7 @@ export function CustomerCard({ name, connection, bills }: { name: string; connec
               <th className="th text-right">Reading</th>
               <th className="th text-right">Cu.M</th>
               <th className="th text-right">Amount</th>
-              <th className="th">O.R. No.</th>
+              <th className="th">Invoice No.</th>
               <th className="th">Date paid</th>
               <th className="th">Status</th>
             </tr>
