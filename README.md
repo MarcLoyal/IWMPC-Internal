@@ -125,8 +125,10 @@ own price) is available as an option when changing rates.
   Print Bills has *Which form*: monthly bills, notices, or both (two PDFs).
 - **Money settings** (penalty, reconnection fee) need a reason; every change is kept in
   `setting_changes` and shown under *History of changes*. New values apply to bills made afterwards.
-- **Vercel variables for signature storage:** `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY`
-  (Supabase → Project Settings → API). Without them signatures are kept in the database.
+- **Vercel variables for signature storage:** `SUPABASE_URL` and either `SUPABASE_SECRET_KEY` (the new
+  `sb_secret_...` key, recommended) or `SUPABASE_SERVICE_ROLE_KEY` (the legacy JWT key), from Supabase →
+  Project Settings → API Keys. Server-side only; never in a `VITE_` variable. Without them signatures are
+  kept in the database.
 
 ## Tech
 

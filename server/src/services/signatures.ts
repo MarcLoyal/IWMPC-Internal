@@ -71,15 +71,25 @@ export function cleanSignature(input: Buffer): { png: Buffer; width: number; hei
 
 const supabase = () => {
   const url = process.env.SUPABASE_URL?.replace(/\/+$/, '');
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  // Either the new secret key (sb_secret_...) or the legacy service_role key.
+  const key = process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
   return url && key ? { url, key } : null;
 };
+
+/**
+ * How the key is sent. A new secret key (sb_secret_...) is not a JWT: it goes only in the `apikey`
+ * header and Supabase's gateway turns it into a service-role token. A legacy service_role key is a JWT
+ * and also goes in `Authorization: Bearer`.
+ */
+export function storageHeaders(key: string): Record<string, string> {
+  return key.startsWith('eyJ') ? { apikey: key, Authorization: `Bearer ${key}` } : { apikey: key };
+}
 
 async function storageFetch(path: string, init: RequestInit = {}) {
   const s = supabase()!;
   return fetch(`${s.url}/storage/v1/${path}`, {
     ...init,
-    headers: { Authorization: `Bearer ${s.key}`, apikey: s.key, ...(init.headers ?? {}) },
+    headers: { ...storageHeaders(s.key), ...(init.headers ?? {}) },
   });
 }
 

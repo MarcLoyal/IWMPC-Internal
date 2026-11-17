@@ -5,7 +5,8 @@ import { app } from '../app';
 import { prisma } from '../lib/prisma';
 import { todayManila } from '../lib/dates';
 import { addDays, addMonths, periodOf } from '../lib/periods';
-import { cleanSignature } from '../services/signatures';
+import { cleanSignature, readSignature, saveSignature, storageHeaders } from '../services/signatures';
+import { vi } from 'vitest';
 import { loginAs, makeAccount, resetDb } from './helpers';
 
 const today = todayManila();
@@ -245,5 +246,51 @@ describe('signatures', () => {
     expect((await board.get('/api/water/print/bills')).status).toBe(403);
     expect((await board.get('/api/water/print/summary')).status).toBe(403);
     expect((await board.post('/api/water/print/record').send({ billIds: [1] })).status).toBe(403);
+  });
+});
+
+describe('private signature storage (Supabase)', () => {
+  it('sends a new secret key only as apikey, and a legacy service_role key also as a Bearer token', () => {
+    expect(storageHeaders('sb_secret_abc123')).toEqual({ apikey: 'sb_secret_abc123' });
+    const jwt = 'eyJhbGciOiJIUzI1NiJ9.e30.sig';
+    expect(storageHeaders(jwt)).toEqual({ apikey: jwt, Authorization: `Bearer ${jwt}` });
+  });
+
+  it('stores and reads the image in the private bucket with the secret key, never a public link', async () => {
+    const admin = await prisma.user.findFirstOrThrow({ where: { role: 'ADMIN' } });
+    const calls: { url: string; method: string; headers: Record<string, string> }[] = [];
+    const stored: Record<string, Uint8Array<ArrayBuffer>> = {};
+    const fake = vi.fn(async (url: string, init: RequestInit = {}) => {
+      const headers = (init.headers ?? {}) as Record<string, string>;
+      calls.push({ url, method: init.method ?? 'GET', headers });
+      if (url.endsWith('/storage/v1/bucket')) return new Response('{}', { status: 200 });
+      if (init.method === 'POST') {
+        stored[url] = init.body as Uint8Array<ArrayBuffer>;
+        return new Response('{}', { status: 200 });
+      }
+      const body = stored[url.replace('/object/', '/object/')];
+      return body ? new Response(new Uint8Array(body), { status: 200 }) : new Response('', { status: 404 });
+    });
+    vi.stubGlobal('fetch', fake);
+    process.env.SUPABASE_URL = 'https://example.supabase.co/';
+    process.env.SUPABASE_SECRET_KEY = 'sb_secret_test';
+    try {
+      await saveSignature('bill_cashier', signaturePng(), admin.id);
+      const row = await prisma.signatureImage.findUniqueOrThrow({ where: { slot: 'bill_cashier' } });
+      expect(row).toMatchObject({ storage: 'SUPABASE', storageKey: 'bill_cashier.png', data: null });
+      expect(calls[0]).toMatchObject({ url: 'https://example.supabase.co/storage/v1/bucket', method: 'POST' });
+      expect(calls[1]).toMatchObject({ url: 'https://example.supabase.co/storage/v1/object/signatures/bill_cashier.png', method: 'POST' });
+      for (const c of calls) {
+        expect(c.headers.apikey).toBe('sb_secret_test');
+        expect(c.headers.Authorization).toBeUndefined();
+        expect(c.url).not.toContain('/public/');
+      }
+      const bytes = await readSignature('bill_cashier');
+      expect(bytes && PNG.sync.read(bytes).width).toBeGreaterThan(0);
+    } finally {
+      delete process.env.SUPABASE_URL;
+      delete process.env.SUPABASE_SECRET_KEY;
+      vi.unstubAllGlobals();
+    }
   });
 });
