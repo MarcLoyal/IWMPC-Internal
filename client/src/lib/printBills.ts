@@ -1,31 +1,61 @@
 import { api } from './api';
-import type { Paper, PrintBill, PrintHeader } from './billPdf';
+import type { NoticeHeader, Paper, PrintBill, PrintHeader, Signatures, Who } from './billPdf';
+
+/** Everything needed to draw a print job. Signatures arrive only here, never as a link. */
+export interface PrintJob {
+  header: PrintHeader;
+  noticeHeader: NoticeHeader;
+  signatures: { bill: Signatures; notice: Signatures };
+  bills: PrintBill[];
+}
+
+type Page = {
+  header: PrintHeader;
+  noticeHeader: NoticeHeader;
+  signatures: { bill: Partial<Record<Who, string>>; notice: Partial<Record<Who, string>> } | null;
+  total: number;
+  bills: PrintBill[];
+};
+
+const fromBase64 = (b64: string) => Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+const decode = (set: Partial<Record<Who, string>> = {}): Signatures =>
+  Object.fromEntries(Object.entries(set).map(([who, b64]) => [who, fromBase64(b64 as string)])) as Signatures;
 
 /** Fetches every bill for a print job, 500 at a time, so a big batch never times out. */
-export async function fetchBills(query: URLSearchParams, onProgress?: (done: number, total: number) => void) {
-  let header: PrintHeader | null = null;
+export async function fetchBills(query: URLSearchParams, onProgress?: (done: number, total: number) => void): Promise<PrintJob> {
+  let first: Page | null = null;
   const bills: PrintBill[] = [];
   let total = Infinity;
   while (bills.length < total) {
     const q = new URLSearchParams(query);
     q.set('offset', String(bills.length));
     q.set('limit', '500');
-    const page = await api.get<{ header: PrintHeader; total: number; bills: PrintBill[] }>(`/water/print/bills?${q}`);
-    header = page.header;
+    const page = await api.get<Page>(`/water/print/bills?${q}`);
+    first ??= page;
     total = page.total;
     bills.push(...page.bills);
     onProgress?.(bills.length, total);
     if (page.bills.length === 0) break;
   }
-  return { header: header!, bills };
+  return {
+    header: first!.header,
+    noticeHeader: first!.noticeHeader,
+    signatures: { bill: decode(first!.signatures?.bill), notice: decode(first!.signatures?.notice) },
+    bills,
+  };
 }
 
-export async function buildPdf(header: PrintHeader, bills: PrintBill[], paper: Paper): Promise<Blob> {
+/** Makes the PDF for monthly bills (4 a page) or for notices (1 or 2 a page). */
+export async function buildPdf(job: PrintJob, bills: PrintBill[], form: 'BILL' | 'NOTICE', paper: Paper): Promise<Blob> {
   // Let the screen show "Making the PDF…" before the browser gets busy drawing pages.
   await new Promise((resolve) => setTimeout(resolve, 60));
   // The PDF code is large, so it is only downloaded when someone prints.
-  const { loadAssets, makeBillsPdf } = await import('./billPdf');
-  const bytes = await makeBillsPdf(header, bills, await loadAssets(), paper);
+  const { loadAssets, makeBillsPdf, makeNoticesPdf } = await import('./billPdf');
+  const assets = await loadAssets();
+  const bytes =
+    form === 'NOTICE'
+      ? await makeNoticesPdf(job.noticeHeader, bills, assets, paper, job.signatures.notice)
+      : await makeBillsPdf(job.header, bills, assets, paper, job.signatures.bill);
   return new Blob([new Uint8Array(bytes)], { type: 'application/pdf' });
 }
 
@@ -68,13 +98,18 @@ export function download(url: string, fileName: string) {
   a.remove();
 }
 
-/** Prints one bill (from the account's customer card), in the first slot of the page. */
+/**
+ * Prints one bill (from the account's customer card). Accounts with enough unpaid months get the
+ * 2-month notice instead of the monthly bill, as in batch printing.
+ */
 export async function printOneBill(billId: number) {
   const win = openPrintWindow();
   try {
-    const { header, bills } = await fetchBills(new URLSearchParams({ billIds: String(billId) }));
-    const blob = await buildPdf(header, bills, header.paper);
-    showPdf(win, blob, `water-bill-${bills[0]?.period ?? ''}-${billId}.pdf`);
+    const job = await fetchBills(new URLSearchParams({ billIds: String(billId) }));
+    const bill = job.bills[0];
+    const form = bill?.form === 'NOTICE' ? 'NOTICE' : 'BILL';
+    const blob = await buildPdf(job, job.bills, form, form === 'NOTICE' ? job.noticeHeader.paper : job.header.paper);
+    showPdf(win, blob, `${form === 'NOTICE' ? 'water-notice' : 'water-bill'}-${bill?.period ?? ''}-${billId}.pdf`);
     await recordPrinted([billId]);
   } catch (err) {
     win?.close();

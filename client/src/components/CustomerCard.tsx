@@ -5,6 +5,7 @@ import { BILL_STATUS, RATE_CLASS, monthShort } from '../lib/water';
 import { BillModal } from './BillModal';
 import { errorMessage } from '../lib/api';
 import { printOneBill } from '../lib/printBills';
+import { useAuth } from '../lib/auth';
 import { Badge, Card } from './ui';
 
 /**
@@ -16,6 +17,7 @@ export function CustomerCard({ name, connection, bills }: { name: string; connec
   const years = Array.from(new Set([thisYear, ...bills.map((b) => b.period.slice(0, 4))])).sort().reverse();
   const [year, setYear] = useState(years[0]);
   const [openBill, setOpenBill] = useState<number | null>(null);
+  const canPrint = useAuth().can('ADMIN', 'STAFF', 'CASHIER');
   const [printing, setPrinting] = useState<number | null>(null);
   const [lastTried, setLastTried] = useState<number | null>(null);
   const [printError, setPrintError] = useState('');
@@ -122,9 +124,11 @@ export function CustomerCard({ name, connection, bills }: { name: string; connec
                       <button type="button" onClick={() => setOpenBill(b.id)} className="text-brand-700 hover:underline">
                         Open bill
                       </button>
-                      <button type="button" onClick={() => void printBill(b.id)} disabled={printing === b.id} className="text-brand-700 hover:underline disabled:text-slate-400">
-                        {printing === b.id ? 'Preparing…' : 'Print bill'}
-                      </button>
+                      {canPrint && (
+                        <button type="button" onClick={() => void printBill(b.id)} disabled={printing === b.id} className="text-brand-700 hover:underline disabled:text-slate-400">
+                          {printing === b.id ? 'Preparing…' : 'Print bill'}
+                        </button>
+                      )}
                     </span>
                     {printError && printing === null && lastTried === b.id && <span className="block text-sm text-red-700">{printError}</span>}
                   </td>

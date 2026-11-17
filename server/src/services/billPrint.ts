@@ -1,7 +1,7 @@
 import { Prisma } from '@prisma/client';
 import { prisma } from '../lib/prisma';
 import { fromDbDate, todayManila } from '../lib/dates';
-import { periodLabel } from '../lib/periods';
+import { addDays, periodLabel } from '../lib/periods';
 import { getSettings, type Settings } from './settings';
 import { billState, type BillStatus } from './water';
 
@@ -22,7 +22,26 @@ export interface BillRow {
   withPenalty: boolean;
 }
 
+/** One unpaid month on the 2-month notice. Amount and penalty are what is still owed. */
+export interface NoticeRow {
+  month: string;
+  cubicMeters: number;
+  amount: string;
+  penalty: string;
+  total: string;
+}
+
 export interface PrintBill {
+  /** BILL = the monthly bill; NOTICE = the 2-month unpaid notice (shown instead of the bill). */
+  form: 'BILL' | 'NOTICE';
+  /** Months with money still owed, counting this month. */
+  unpaidMonths: number;
+  notice: {
+    rows: NoticeRow[];
+    totals: { amount: string; penalty: string; total: string };
+    dueDate: string;
+    disconnectionDate: string;
+  } | null;
   billId: number;
   accountId: number;
   areaId: number;
@@ -49,11 +68,54 @@ export interface PrintHeader {
   signatories: { name: string; title: string; label: string }[];
 }
 
+export interface NoticeHeader {
+  coopName: string;
+  coopAddress: string;
+  cdaNo: string;
+  phoneLine: string;
+  penaltyLabel: string;
+  reconnectionFee: string;
+  thresholdMonths: number;
+  perPage: 1 | 2;
+  paper: 'LETTER' | 'LONG';
+  signatories: { name: string; title: string; label: string }[];
+}
+
 export interface PrintOptions {
   period: string;
   areaIds: number[];
   unpaidOnly: boolean;
   sort: 'AREA' | 'METER';
+  /** Which form to return: 'BILL', 'NOTICE', or both ('ALL'). */
+  form?: 'BILL' | 'NOTICE' | 'ALL';
+  /** A disconnection date for the whole batch, instead of the rule. */
+  disconnectDate?: string | null;
+}
+
+/** "Jan-Mar 2026", or "Nov 2025-Mar 2026" across a new year (also used for combined rows). */
+export function monthSpan(from: string, to: string): string {
+  return monthRange(from, to);
+}
+
+export function noticeHeader(s: Settings): NoticeHeader {
+  const percent = s.water_penalty_type !== 'FIXED';
+  const value = Number(s.water_penalty_value);
+  return {
+    coopName: s.coop_name.toUpperCase(),
+    coopAddress: s.coop_address,
+    cdaNo: s.coop_cda_no,
+    phoneLine: s.notice_phone_line,
+    penaltyLabel: percent ? `PENALTY (${Number.isInteger(value) ? value : value.toFixed(2)}%)` : 'PENALTY',
+    reconnectionFee: Number(s.reconnection_fee).toFixed(2),
+    thresholdMonths: Math.max(2, parseInt(s.notice_threshold_months, 10) || 2),
+    perPage: s.notice_per_page === '2' ? 2 : 1,
+    paper: s.bill_paper === 'LONG' ? 'LONG' : 'LETTER',
+    signatories: [
+      { label: 'Prepared by:', name: s.notice_preparer_name, title: s.notice_preparer_title },
+      { label: '', name: s.notice_cashier_name, title: s.notice_cashier_title },
+      { label: '', name: s.notice_manager_name, title: s.notice_manager_title },
+    ],
+  };
 }
 
 const zero = () => new Prisma.Decimal(0);
@@ -98,8 +160,13 @@ const include = {
 type FullBill = Prisma.WaterBillGetPayload<{ include: typeof include }>;
 
 /** Builds the bills for one month (or the given bill ids), applying the filters and the sort. */
-export async function buildPrintBills(opts: PrintOptions | { billIds: number[] }): Promise<PrintBill[]> {
+export async function buildPrintBills(opts: PrintOptions | { billIds: number[]; disconnectDate?: string | null }): Promise<PrintBill[]> {
   const today = todayManila();
+  const settings = await getSettings(prisma);
+  const threshold = Math.max(2, parseInt(settings.notice_threshold_months, 10) || 2);
+  const disconnectDays = Math.max(0, parseInt(settings.disconnect_days_after_due, 10) || 0);
+  // A landscape notice holds 12 month rows; half a page holds 6. Older months are combined.
+  const noticeMaxRows = settings.notice_per_page === '2' ? 6 : 12;
   const bills: FullBill[] = await prisma.waterBill.findMany({
     where:
       'billIds' in opts
@@ -157,9 +224,57 @@ export async function buildPrintBills(opts: PrintOptions | { billIds: number[] }
     }
     const totalDue = owedBefore.reduce((sum, e) => sum.plus(e.state.balance), zero()).plus(state.balance);
 
+    // The 2-month notice: every month still owed, with what is left of its amount and its penalty.
+    // A payment counts against the amount first, then the penalty.
+    const unpaid = [...owedBefore, ...(state.balance.gt(0) ? [{ bill, state }] : [])];
+    const isNotice = unpaid.length >= threshold;
+    const split = (e: (typeof unpaid)[number]) => {
+      const paidToAmount = Prisma.Decimal.min(e.state.paid, e.bill.amount);
+      const amount = e.bill.amount.minus(paidToAmount);
+      const penalty = Prisma.Decimal.max(zero(), e.state.penalty.minus(e.state.paid.minus(paidToAmount)));
+      return { amount, penalty };
+    };
+    let notice: PrintBill['notice'] = null;
+    if (isNotice) {
+      const parts = unpaid.map((e) => ({ e, ...split(e) }));
+      const extra = parts.length > noticeMaxRows ? parts.slice(0, parts.length - noticeMaxRows + 1) : [];
+      const noticeRows: NoticeRow[] = [];
+      if (extra.length) {
+        const amount = extra.reduce((sum, p) => sum.plus(p.amount), zero());
+        const penalty = extra.reduce((sum, p) => sum.plus(p.penalty), zero());
+        noticeRows.push({
+          month: monthRange(extra[0].e.bill.period, extra[extra.length - 1].e.bill.period),
+          cubicMeters: extra.reduce((n, p) => n + p.e.bill.cubicMeters, 0),
+          amount: amount.toFixed(2),
+          penalty: penalty.toFixed(2),
+          total: amount.plus(penalty).toFixed(2),
+        });
+      }
+      for (const p of parts.slice(extra.length)) {
+        noticeRows.push({
+          month: shortMonth(p.e.bill.period),
+          cubicMeters: p.e.bill.cubicMeters,
+          amount: p.amount.toFixed(2),
+          penalty: p.penalty.toFixed(2),
+          total: p.amount.plus(p.penalty).toFixed(2),
+        });
+      }
+      const sumOf = (pick: (p: (typeof parts)[number]) => Prisma.Decimal) => parts.reduce((sum, p) => sum.plus(pick(p)), zero());
+      const due = fromDbDate(bill.dueDate)!;
+      notice = {
+        rows: noticeRows,
+        totals: { amount: sumOf((p) => p.amount).toFixed(2), penalty: sumOf((p) => p.penalty).toFixed(2), total: totalDue.toFixed(2) },
+        dueDate: due,
+        disconnectionDate: opts.disconnectDate || addDays(due, disconnectDays),
+      };
+    }
+
     const c = bill.connection;
     const a = c.account;
     return {
+      form: (isNotice ? 'NOTICE' : 'BILL') as PrintBill['form'],
+      unpaidMonths: unpaid.length,
+      notice,
       billId: bill.id,
       accountId: a.id,
       areaId: a.areaId,
@@ -176,7 +291,10 @@ export async function buildPrintBills(opts: PrintOptions | { billIds: number[] }
     };
   });
 
-  const filtered = 'billIds' in opts ? result : opts.unpaidOnly ? result.filter((b) => Number(b.totalDue) > 0) : result;
+  const wanted = 'billIds' in opts || !opts.form || opts.form === 'ALL' ? null : opts.form;
+  const filtered = result.filter(
+    (b) => ('billIds' in opts || !opts.unpaidOnly || Number(b.totalDue) > 0) && (!wanted || b.form === wanted),
+  );
   const sort = 'billIds' in opts ? 'AREA' : opts.sort;
   filtered.sort((x, y) =>
     sort === 'METER'
@@ -209,6 +327,10 @@ export async function missingReadings(period: string, areaIds: number[]) {
 
 export async function printSettings() {
   return printHeader(await getSettings(prisma));
+}
+
+export async function noticeSettings() {
+  return noticeHeader(await getSettings(prisma));
 }
 
 export { periodLabel };

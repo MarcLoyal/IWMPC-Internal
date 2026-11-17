@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { errorMessage } from '../lib/api';
 import { formatDateTime } from '../lib/format';
 import { printOneBill } from '../lib/printBills';
+import { useAuth } from '../lib/auth';
 import { createPortal } from 'react-dom';
 import { useLoad } from '../lib/useLoad';
 import { periodLabel } from '../lib/water';
@@ -14,6 +15,7 @@ import { Button, Loading, Notice } from './ui';
  */
 export function BillModal({ billId, onClose }: { billId: number; onClose: () => void }) {
   const { data, error, loading, reload } = useLoad<BillView>(`/water/bills/${billId}`);
+  const canPrint = useAuth().can('ADMIN', 'STAFF', 'CASHIER');
   const [printing, setPrinting] = useState(false);
   const [printError, setPrintError] = useState('');
 
@@ -63,9 +65,11 @@ export function BillModal({ billId, onClose }: { billId: number; onClose: () => 
             {data?.lastPrinted ? `Last printed ${formatDateTime(data.lastPrinted.at)} by ${data.lastPrinted.by}` : data ? 'Not printed yet' : ''}
             {printError && <span className="block text-red-700">{printError}</span>}
           </span>
-          <Button onClick={() => void printPaper()} disabled={!data || printing}>
-            {printing ? 'Preparing…' : 'Print Bill'}
-          </Button>
+          {canPrint && (
+            <Button onClick={() => void printPaper()} disabled={!data || printing}>
+              {printing ? 'Preparing…' : 'Print Bill'}
+            </Button>
+          )}
           <Button variant="primary" onClick={onClose}>
             Close
           </Button>

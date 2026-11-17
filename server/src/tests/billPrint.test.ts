@@ -120,8 +120,8 @@ describe('choosing which bills to print', () => {
     const s = (await staff.get('/api/water/print/summary')).body;
     expect(s).toMatchObject({ period: THIS, bills: 3, pages: 1, pagesPerArea: 2 });
     expect(s.byArea).toEqual([
-      { id: 1, name: 'Narra', bills: 2 },
-      { id: 2, name: 'Ipil', bills: 1 },
+      { id: 1, name: 'Narra', bills: 2, monthly: 2, notices: 0 },
+      { id: 2, name: 'Ipil', bills: 1, monthly: 1, notices: 0 },
     ]);
     expect(s.missing).toMatchObject([{ name: 'Dan NoReading', area: 'Ipil' }]);
     expect(s.periods[0]).toBe(THIS);
@@ -156,7 +156,7 @@ describe('settings on the printout', () => {
       cdaNo: '9520-04002341',
       paper: 'LETTER',
       signatories: [
-        { label: 'Prepared by:', name: 'Alfa M. Mahiya', title: 'Billing Officer' },
+        { label: 'Prepared by:', name: 'Alffa M. Mahiya', title: 'Billing Officer' },
         { name: 'Emard B. Ramos', title: 'Cashier' },
         { name: 'Marino R. Abanador', title: 'General Manager' },
       ],
@@ -208,17 +208,17 @@ describe('due date rule', () => {
 describe('print record', () => {
   it('records who printed which bills, and allows reprinting', async () => {
     const staff = await loginAs('STAFF');
-    const board = await loginAs('BOARD');
+    const cashier = await loginAs('CASHIER');
     const x = await customer('Juan Dela Cruz');
     await read(staff, x.connectionId, 1010);
     const bill = await prisma.waterBill.findFirstOrThrow();
     expect((await staff.get(`/api/water/bills/${bill.id}`)).body.lastPrinted).toBeNull();
 
     expect((await staff.post('/api/water/print/record').send({ billIds: [bill.id, 999999] })).body).toEqual({ recorded: 1 });
-    expect((await board.post('/api/water/print/record').send({ billIds: [bill.id] })).body).toEqual({ recorded: 1 });
+    expect((await cashier.post('/api/water/print/record').send({ billIds: [bill.id] })).body).toEqual({ recorded: 1 });
     expect(await prisma.billPrint.count({ where: { waterBillId: bill.id } })).toBe(2);
     const last = (await staff.get(`/api/water/bills/${bill.id}`)).body.lastPrinted;
-    expect(last.by).toBe('BOARD');
+    expect(last.by).toBe('CASHIER');
     expect((await staff.post('/api/water/print/record').send({ billIds: [] })).status).toBe(400);
     // One bill on its own, for the account's "Print bill" button.
     expect((await bills(staff, { billIds: String(bill.id) })).bills).toHaveLength(1);

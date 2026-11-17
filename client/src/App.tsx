@@ -54,7 +54,7 @@ export function App() {
         <Route path="accounts/:id/make-member" element={<Only roles={['ADMIN', 'STAFF']}><AccountForm makeMember /></Only>} />
         <Route path="water" element={<WaterReadings />} />
         <Route path="water/overdue" element={<Overdue />} />
-        <Route path="water/print" element={<PrintBills />} />
+        <Route path="water/print" element={<Only roles={['ADMIN', 'STAFF', 'CASHIER']}><PrintBills /></Only>} />
         <Route path="water/bills/:id" element={<BillNotice />} />
         <Route path="settings/water-rates" element={<Only roles={['ADMIN']}><WaterRates /></Only>} />
         <Route path="cashier" element={<Cashier />} />

@@ -13,7 +13,7 @@ const HASH = bcrypt.hashSync(PASSWORD, 4);
 /** Empties the test database and adds the basics: one area, settings, one user per role. */
 export async function resetDb() {
   await prisma.$executeRawUnsafe(
-    'TRUNCATE audit_log, payments, sale_items, sales, price_changes, product_units, products, water_bills, meter_readings, rate_schedules, beneficiaries, water_connections, accounts, areas, settings, users RESTART IDENTITY CASCADE',
+    'TRUNCATE setting_changes, signature_images, bill_prints, audit_log, payments, sale_items, sales, price_changes, product_units, products, water_bills, meter_readings, rate_schedules, beneficiaries, water_connections, accounts, areas, settings, users RESTART IDENTITY CASCADE',
   );
   await prisma.area.createMany({ data: [{ name: 'Narra' }, { name: 'Ipil' }] });
   await ensureDefaultSettings(prisma);

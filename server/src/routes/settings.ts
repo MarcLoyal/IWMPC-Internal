@@ -7,7 +7,7 @@ import { idParam } from '../lib/params';
 import { allow, wrap } from '../middleware/auth';
 import { audit } from '../services/audit';
 import { formatNumber } from '../services/numbering';
-import { getSettings, type SettingKey } from '../services/settings';
+import { MONEY_SETTINGS, SETTING_KEYS, getSettings, type SettingKey } from '../services/settings';
 
 export const settingsRouter = Router();
 export const areasRouter = Router();
@@ -62,6 +62,22 @@ const settingsSchema = z
     bill_cashier_title: text(60),
     bill_manager_name: text(80),
     bill_manager_title: text(60),
+    ...Object.fromEntries(
+      ['bill', 'notice'].flatMap((form) =>
+        ['preparer', 'cashier', 'manager'].map((who) => [`sig_${form}_${who}_on`, z.enum(['true', 'false'])]),
+      ),
+    ),
+    notice_phone_line: text(120),
+    notice_preparer_name: text(80),
+    notice_preparer_title: text(60),
+    notice_cashier_name: text(80),
+    notice_cashier_title: text(60),
+    notice_manager_name: text(80),
+    notice_manager_title: text(60),
+    notice_threshold_months: wholeNumber('the number of unpaid months', 2, 12),
+    notice_per_page: z.enum(['1', '2'], { errorMap: () => ({ message: 'Please choose 1 or 2 notices per page.' }) }),
+    disconnect_days_after_due: wholeNumber('the days before disconnection', 0, 90),
+    reconnection_fee: money('reconnection fee'),
     water_penalty_type: z.enum(['PERCENT', 'FIXED'], { errorMap: () => ({ message: 'Please choose the kind of late penalty.' }) }),
     water_penalty_value: money('late penalty'),
     water_disconnect_months: wholeNumber('the number of unpaid months', 1, 24),
@@ -80,14 +96,54 @@ settingsRouter.put(
   allow('ADMIN'),
   wrap(async (req, res) => {
     const changes = settingsSchema.parse(req.body) as Partial<Record<SettingKey, string>>;
+    const reason = typeof req.body?.reason === 'string' ? req.body.reason.trim().slice(0, 200) : '';
     const before = await getSettings(prisma);
+    // "10" and "10.00" are the same amount, so saving it again is not a change.
+    const same = (a: string | undefined, b: string | undefined) =>
+      a === b || (a !== undefined && b !== undefined && a.trim() !== '' && b.trim() !== '' && !isNaN(Number(a)) && !isNaN(Number(b)) && Number(a) === Number(b));
+    const changed = (Object.keys(changes) as SettingKey[]).filter((k) => !same(changes[k], before[k]));
+    if (changed.some((k) => MONEY_SETTINGS.includes(k)) && !reason) {
+      throw new AppError(400, 'Please type a short reason for changing the penalty or the reconnection fee.');
+    }
     await prisma.$transaction(async (tx) => {
-      for (const [key, value] of Object.entries(changes)) {
+      for (const key of changed) {
+        const value = changes[key]!;
         await tx.setting.upsert({ where: { key }, update: { value }, create: { key, value } });
+        await tx.settingChange.create({
+          data: { key, oldValue: before[key] ?? null, newValue: value, reason, changedById: req.user!.id },
+        });
       }
-      await audit(tx, req.user!.id, 'settings.update', 'settings', null, before, { ...before, ...changes });
+      await audit(tx, req.user!.id, 'settings.update', 'settings', null, before, { ...before, ...changes, reason });
     });
     res.json({ ok: true });
+  }),
+);
+
+// The history of chosen settings, newest first (Admin only).
+settingsRouter.get(
+  '/history',
+  allow('ADMIN'),
+  wrap(async (req, res) => {
+    const keys = String(req.query.keys ?? '')
+      .split(',')
+      .filter((k): k is SettingKey => (SETTING_KEYS as string[]).includes(k));
+    const rows = await prisma.settingChange.findMany({
+      where: keys.length ? { key: { in: keys } } : {},
+      include: { changedBy: { select: { name: true } } },
+      orderBy: [{ changedAt: 'desc' }, { id: 'desc' }],
+      take: 200,
+    });
+    res.json({
+      history: rows.map((r) => ({
+        id: r.id,
+        key: r.key,
+        oldValue: r.oldValue,
+        newValue: r.newValue,
+        reason: r.reason,
+        changedBy: r.changedBy?.name ?? null,
+        changedAt: r.changedAt.toISOString(),
+      })),
+    });
   }),
 );
 
