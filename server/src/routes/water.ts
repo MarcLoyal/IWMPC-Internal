@@ -334,6 +334,10 @@ waterRouter.get(
       previousMonths: previous.map((b) => periodLabel(b.period)),
       totalDue: previousBalance.plus(json.balance).toFixed(2),
       lastPrinted: lastPrint ? { at: lastPrint.printedAt.toISOString(), by: lastPrint.printedBy.name } : null,
+      // The invoices this bill was paid on, so "Open bill" can show them.
+      invoices: await prisma.invoice
+        .findMany({ where: { payments: { some: { waterBillId: id } } }, orderBy: { id: 'asc' } })
+        .then((list) => list.map((i) => ({ id: i.id, number: i.number, date: i.invoiceDate.toISOString().slice(0, 10), status: i.status }))),
       coop: { name: settings.coop_name, address: settings.coop_address, cdaNo: settings.coop_cda_no },
     });
   }),

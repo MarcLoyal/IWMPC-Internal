@@ -4,6 +4,7 @@ import { AppError, notFound } from '../lib/errors';
 import { fromDbDate, toDbDate, todayManila } from '../lib/dates';
 import { daysBetween, dueDateFor, periodLabel } from '../lib/periods';
 import { audit } from './audit';
+import { displayNumber } from '../lib/orNumbers';
 import { computeWaterCharge, scheduleFor, termsOf } from './rates';
 import { getSettings } from './settings';
 
@@ -57,7 +58,7 @@ export function billState(
     balance,
     status,
     datePaid: balance.isZero() && dates.length ? dates[dates.length - 1] : null,
-    orNumbers: active.map((p) => p.orNumber),
+    orNumbers: [...new Set(active.map((p) => displayNumber(p.orNumber)))],
   };
 }
 

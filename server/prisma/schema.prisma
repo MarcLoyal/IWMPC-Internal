@@ -80,6 +80,8 @@ model User {
   auditLogs       AuditLog[]
   billPrints      BillPrint[]
   settingChanges  SettingChange[]
+  invoicesCreated Invoice[] @relation("InvoiceCreatedBy")
+  invoicesCancelled Invoice[] @relation("InvoiceCancelledBy")
   signatures      SignatureImage[]
   priceChanges    PriceChange[]
   salesCreated    Sale[]     @relation("SaleCreatedBy")
@@ -147,6 +149,7 @@ model Account {
   connections   WaterConnection[]
   payments      Payment[]
   sales         Sale[]
+  invoices      Invoice[]
 
   @@index([fullName])
   @@index([areaId])
@@ -339,6 +342,7 @@ model Sale {
   createdById Int          @map("created_by")
 
   account   Account?   @relation(fields: [accountId], references: [id])
+  invoices  Invoice[]
   createdBy User       @relation("SaleCreatedBy", fields: [createdById], references: [id])
   items     SaleItem[]
   payments  Payment[]
@@ -381,6 +385,8 @@ model Payment {
   connectionId Int?         @map("connection_id")
   waterBillId  Int?         @map("water_bill_id")
   saleId       Int?         @map("sale_id")
+  // The BIR service invoice this payment was written on (several payments can share one).
+  invoiceId    Int?         @map("invoice_id")
   description String        @default("")
   status      PaymentStatus @default(ACTIVE)
   voidReason  String?       @map("void_reason")
@@ -391,6 +397,7 @@ model Payment {
 
   account    Account?         @relation(fields: [accountId], references: [id])
   sale       Sale?            @relation(fields: [saleId], references: [id])
+  invoice    Invoice?         @relation(fields: [invoiceId], references: [id])
   connection WaterConnection? @relation(fields: [connectionId], references: [id])
   waterBill  WaterBill?       @relation(fields: [waterBillId], references: [id])
   createdBy  User             @relation("PaymentCreatedBy", fields: [createdById], references: [id])
@@ -400,6 +407,7 @@ model Payment {
   @@index([paymentDate])
   @@index([waterBillId])
   @@index([saleId])
+  @@index([invoiceId])
   @@map("payments")
 }
 
@@ -475,4 +483,37 @@ model SignatureImage {
   updatedBy User? @relation(fields: [updatedById], references: [id])
 
   @@map("signature_images")
+}
+
+// A handwritten BIR Service Invoice from IWMPC's booklet. The system never prints invoices: the
+// cashier types the number from the paper invoice, and the system shows a guide of what to write.
+// One invoice can cover several payments made in one visit (e.g. two months of water and rice).
+model Invoice {
+  id            Int           @id @default(autoincrement())
+  number        String        @unique
+  // Empty for a walk-in customer.
+  accountId     Int?          @map("account_id")
+  walkInName    String        @default("") @map("walk_in_name")
+  invoiceDate   DateTime      @map("invoice_date") @db.Date
+  // CASH, or CHARGE for a Rice & LPG sale on credit (no payment yet).
+  saleType      String        @default("CASH") @map("sale_type")
+  // The credit sale a CHARGE invoice was written for.
+  saleId        Int?          @map("sale_id")
+  status        PaymentStatus @default(ACTIVE)
+  cancelReason  String?       @map("cancel_reason")
+  cancelledAt   DateTime?     @map("cancelled_at")
+  cancelledById Int?          @map("cancelled_by")
+  createdAt     DateTime      @default(now()) @map("created_at")
+  createdById   Int           @map("created_by")
+
+  account     Account?  @relation(fields: [accountId], references: [id])
+  sale        Sale?     @relation(fields: [saleId], references: [id])
+  createdBy   User      @relation("InvoiceCreatedBy", fields: [createdById], references: [id])
+  cancelledBy User?     @relation("InvoiceCancelledBy", fields: [cancelledById], references: [id])
+  payments    Payment[]
+
+  @@index([accountId])
+  @@index([invoiceDate])
+  @@index([createdById])
+  @@map("invoices")
 }

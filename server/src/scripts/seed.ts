@@ -13,12 +13,12 @@ import type { ConnectionStatus, Role } from '@prisma/client';
 import { prisma } from '../lib/prisma';
 import { toDbDate, todayManila } from '../lib/dates';
 import { parseMoney } from '../lib/money';
-import { recordPayment } from '../services/payments';
+import { recordPayment } from '../services/invoices';
 import { startMembership } from '../services/membership';
 import { nextNumber } from '../services/numbering';
 import { addDays, addMonths, periodOf } from '../lib/periods';
 import { refreshBillSettled, saveReadings } from '../services/water';
-import { createSale } from '../services/sales';
+import { createSale } from '../services/invoices';
 import { bootstrap } from './bootstrap';
 
 const SAMPLE_PASSWORD = 'iwmpc12345';

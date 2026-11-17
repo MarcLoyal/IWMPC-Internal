@@ -17,6 +17,7 @@ import { addMonths, isPeriod, periodOf } from '../lib/periods';
 import { fromDbDate } from '../lib/dates';
 import { saleItemJson } from '../lib/serialize';
 import { saleBalance } from '../services/sales';
+import { displayNumber } from '../lib/orNumbers';
 import { billJson, billState, unpaidBills, type BillStatus } from '../services/water';
 
 export const accountsRouter = Router();
@@ -378,7 +379,7 @@ accountsRouter.get(
         status: sale.status,
         isCredit: sale.isCredit,
         balance: sale.isCredit && sale.status === 'ACTIVE' ? saleBalance(sale).toFixed(2) : '0.00',
-        orNumbers: sale.payments.filter((p) => p.status === 'ACTIVE').map((p) => p.orNumber),
+        orNumbers: [...new Set(sale.payments.filter((p) => p.status === 'ACTIVE').map((p) => displayNumber(p.orNumber)))],
       })),
     );
     const thisYear = todayManila().slice(0, 4);

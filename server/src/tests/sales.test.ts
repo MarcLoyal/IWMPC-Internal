@@ -211,7 +211,7 @@ describe('selling at the Cashier', () => {
     const admin = await loginAs('ADMIN');
     const juan = await makeAccount('Juan Dela Cruz');
     const one = [{ unitId: u.lpg, quantity: 1 }];
-    expect((await admin.post('/api/sales').send(sale(juan.id, '', one))).body.error).toMatch(/OR number/);
+    expect((await admin.post('/api/sales').send(sale(juan.id, '', one))).body.error).toMatch(/Invoice No/);
     expect((await admin.post('/api/sales').send(sale(juan.id, '   ', one))).status).toBe(400);
     expect((await admin.post('/api/sales').send(sale(juan.id, '1', []))).status).toBe(400);
     for (const quantity of [0, -1, 'abc', '1.234']) {
@@ -323,7 +323,8 @@ describe('Rice & LPG Sales report', () => {
 });
 
 describe('credit (utang)', () => {
-  const credit = (accountId: number | null) => sale(accountId, '', [{ unitId: u.dinoSack, quantity: 1 }], { credit: true });
+  // A credit sale is written on a CHARGE invoice at the time of sale.
+  const credit = (accountId: number | null, number = '8001') => sale(accountId, number, [{ unitId: u.dinoSack, quantity: 1 }], { credit: true });
 
   it('is off by default: a credit sale is refused', async () => {
     const cashier = await loginAs('CASHIER');
@@ -335,7 +336,7 @@ describe('credit (utang)', () => {
     expect(await prisma.sale.count()).toBe(0);
   });
 
-  it('when turned on: the sale has no OR number, shows in What they owe, and is paid later with an OR number', async () => {
+  it('when turned on: the sale is on a CHARGE invoice, shows in What they owe, and is paid later with an Invoice No.', async () => {
     const admin = await loginAs('ADMIN');
     const cashier = await loginAs('CASHIER');
     expect((await admin.put('/api/settings').send({ allow_credit: 'true' })).status).toBe(200);
@@ -348,6 +349,9 @@ describe('credit (utang)', () => {
     expect(sold.status).toBe(201);
     expect(sold.body).toMatchObject({ isCredit: true, total: '1550.00', payment: null });
     expect(await prisma.payment.count()).toBe(0);
+    expect(await prisma.invoice.findUniqueOrThrow({ where: { number: '8001' } })).toMatchObject({ saleType: 'CHARGE', saleId: sold.body.saleId, status: 'ACTIVE' });
+    // A credit sale needs an invoice number too.
+    expect((await cashier.post('/api/sales').send(credit(juan.id, ''))).body.error).toMatch(/Invoice No/);
     // Nothing collected yet.
     expect((await cashier.get('/api/reports/daily')).body.grandTotal).toBe('0.00');
 

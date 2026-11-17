@@ -7,7 +7,8 @@ import { normalizeOr } from '../lib/orNumbers';
 import { idParam } from '../lib/params';
 import { paymentJson } from '../lib/serialize';
 import { allow, wrap } from '../middleware/auth';
-import { recordPayment, voidPayment } from '../services/payments';
+import { voidPayment } from '../services/payments';
+import { recordPayment } from '../services/invoices';
 
 export const paymentsRouter = Router();
 
@@ -26,10 +27,10 @@ const paymentSchema = z.object({
   }),
   amount: z.union([z.string(), z.number()], { errorMap: () => ({ message: 'Please enter the amount.' }) }).transform(String),
   orNumber: z
-    .string({ required_error: 'Please enter the OR number from the receipt booklet.' })
+    .string({ required_error: 'Please enter the Invoice No. from the invoice booklet.' })
     .trim()
-    .min(1, 'Please enter the OR number from the receipt booklet.')
-    .max(30, 'The OR number is too long.'),
+    .min(1, 'Please enter the Invoice No. from the invoice booklet.')
+    .max(30, 'The Invoice No. is too long.'),
   description: z.string().trim().max(200).default(''),
   waterBillId: z.coerce.number().int().positive().nullable().optional(),
   saleId: z.coerce.number().int().positive().nullable().optional(),
@@ -53,9 +54,15 @@ paymentsRouter.get(
   '/',
   wrap(async (req, res) => {
     const or = typeof req.query.or === 'string' ? normalizeOr(req.query.or) : '';
-    if (!or) throw new AppError(400, 'Please type an OR number to search for.');
-    const payment = await prisma.payment.findUnique({ where: { orNumber: or }, include: people });
-    res.json({ payment: payment ? paymentJson(payment) : null });
+    if (!or) throw new AppError(400, 'Please type an Invoice No. to search for.');
+    const [payment, invoice] = await Promise.all([
+      prisma.payment.findUnique({ where: { orNumber: or }, include: people }),
+      prisma.invoice.findUnique({ where: { number: or } }),
+    ]);
+    res.json({
+      payment: payment ? paymentJson(payment) : null,
+      invoice: invoice ? { id: invoice.id, number: invoice.number, status: invoice.status, saleType: invoice.saleType } : null,
+    });
   }),
 );
 

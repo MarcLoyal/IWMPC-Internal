@@ -37,105 +37,51 @@ export function priceFor(unit: { price: Prisma.Decimal; memberPrice: Prisma.Deci
   return isMember && unit.memberPrice !== null ? unit.memberPrice : unit.price;
 }
 
-async function orAlreadyUsed(db: Db, orNumber: string): Promise<AppError> {
-  const existing = await db.payment.findUnique({
-    where: { orNumber },
-    include: { account: { select: { fullName: true } }, sale: { select: { walkInName: true } } },
+/** Prices the items for a buyer (member price for members). Shared by sales and the invoice preview. */
+export async function priceItems(db: Db, items: SaleItemInput[], isMember: boolean) {
+  if (!items.length) throw new AppError(400, 'Please add at least one item to the sale.');
+  if (items.some((i) => i.quantity.lte(0))) throw new AppError(400, 'Please enter a quantity greater than zero.');
+  const units = await db.productUnit.findMany({ where: { id: { in: items.map((i) => i.unitId) } }, include: { product: true } });
+  let total = new Prisma.Decimal(0);
+  const lines = items.map((item) => {
+    const unit = units.find((u) => u.id === item.unitId);
+    if (!unit || !unit.active || !unit.product.active) throw new AppError(400, 'One of the items is no longer sold. Please remove it and pick again.');
+    // The price is fixed here and copied onto the sale.
+    const unitPrice = priceFor(unit, isMember);
+    if (unitPrice.lte(0)) {
+      throw new AppError(400, `The price of ${unit.product.name} (${unit.label}) has not been set yet. An Admin must set it in Settings first.`);
+    }
+    const amount = unitPrice.times(item.quantity).toDecimalPlaces(2);
+    total = total.plus(amount);
+    return { productUnitId: unit.id, productName: unit.product.name, unitLabel: unit.label, quantity: item.quantity, unitPrice, amount };
   });
-  if (!existing) return new AppError(409, `OR number ${orNumber} was already used.`);
-  const who = existing.account?.fullName ?? (existing.sale?.walkInName || WALK_IN);
-  const voided = existing.status === 'VOID' ? ' (that payment was voided)' : '';
-  return new AppError(
-    409,
-    `OR number ${orNumber} was already used for ${who} on ${formatDate(fromDbDate(existing.paymentDate)!)}${voided}. Please check the receipt booklet.`,
-  );
+  return { lines, total };
 }
 
-/** The one place that says "this OR number was already used", for every kind of payment. */
-export async function assertOrFree(db: Db, orNumber: string) {
-  if (await db.payment.findUnique({ where: { orNumber }, select: { id: true } })) throw await orAlreadyUsed(db, orNumber);
-}
-export { orAlreadyUsed };
-
-/**
- * Records a Rice & LPG sale with one or more items.
- * Cash: saved together with one payment under one OR number.
- * Credit: only when "Allow credit" is on, only for an account, and with no payment yet.
- */
-export async function createSale(input: NewSale, userId: number) {
-  if (!input.items.length) throw new AppError(400, 'Please add at least one item to the sale.');
-  if (input.items.some((i) => i.quantity.lte(0))) throw new AppError(400, 'Please enter a quantity greater than zero.');
-  const orNumber = normalizeOr(input.orNumber);
-  if (input.credit) {
-    const settings = await getSettings(prisma);
-    if (settings.allow_credit !== 'true') throw new AppError(400, 'Credit sales are turned off. This sale must be paid in cash.');
-    if (!input.accountId) throw new AppError(400, 'A walk-in customer cannot buy on credit. Please pick an account.');
-  } else if (!orNumber) {
-    throw new AppError(400, 'Please enter the OR number from the receipt booklet.');
-  }
-  const saleDate = todayManila();
-
-  try {
-    return await prisma.$transaction(async (tx) => {
-      const account = input.accountId ? await tx.account.findUnique({ where: { id: input.accountId } }) : null;
-      if (input.accountId && !account) throw notFound('This account');
-      if (!input.credit) await assertOrFree(tx, orNumber);
-
-      const units = await tx.productUnit.findMany({
-        where: { id: { in: input.items.map((i) => i.unitId) } },
-        include: { product: true },
-      });
-      let total = new Prisma.Decimal(0);
-      const lines = input.items.map((item) => {
-        const unit = units.find((u) => u.id === item.unitId);
-        if (!unit || !unit.active || !unit.product.active) throw new AppError(400, 'One of the items is no longer sold. Please remove it and pick again.');
-        // The price is fixed here and copied onto the sale.
-        const unitPrice = priceFor(unit, account?.isMember ?? false);
-        if (unitPrice.lte(0)) {
-          throw new AppError(400, `The price of ${unit.product.name} (${unit.label}) has not been set yet. An Admin must set it in Settings first.`);
-        }
-        const amount = unitPrice.times(item.quantity).toDecimalPlaces(2);
-        total = total.plus(amount);
-        return { productUnitId: unit.id, productName: unit.product.name, unitLabel: unit.label, quantity: item.quantity, unitPrice, amount };
-      });
-
-      const sale = await tx.sale.create({
-        data: {
-          accountId: account?.id ?? null,
-          walkInName: account ? '' : input.walkInName.trim(),
-          saleDate: toDbDate(saleDate),
-          total,
-          isCredit: input.credit,
-          settledOn: input.credit ? null : toDbDate(saleDate),
-          createdById: userId,
-          items: { create: lines },
-        },
-        include: { items: true },
-      });
-      await audit(tx, userId, 'sale.create', 'sale', sale.id, null, sale);
-
-      let payment: Payment | null = null;
-      if (!input.credit) {
-        payment = await tx.payment.create({
-          data: {
-            accountId: account?.id ?? null,
-            type: 'RICE_LPG',
-            amount: total,
-            orNumber,
-            paymentDate: toDbDate(saleDate),
-            saleId: sale.id,
-            description: itemsSummary(lines),
-            createdById: userId,
-          },
-        });
-        await audit(tx, userId, 'payment.create', 'payment', payment.id, null, payment);
-      }
-      return { sale, payment };
-    });
-  } catch (err) {
-    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') throw await orAlreadyUsed(prisma, orNumber);
-    throw err;
-  }
+/** Saves a Rice & LPG sale inside an open transaction. The invoice adds its payment (if cash). */
+export async function addSale(
+  tx: Prisma.TransactionClient,
+  input: { accountId: number | null; walkInName: string; items: SaleItemInput[]; credit: boolean; saleDate: string },
+  userId: number,
+) {
+  const account = input.accountId ? await tx.account.findUnique({ where: { id: input.accountId } }) : null;
+  if (input.accountId && !account) throw notFound('This account');
+  const { lines, total } = await priceItems(tx, input.items, account?.isMember ?? false);
+  const sale = await tx.sale.create({
+    data: {
+      accountId: account?.id ?? null,
+      walkInName: account ? '' : input.walkInName.trim(),
+      saleDate: toDbDate(input.saleDate),
+      total,
+      isCredit: input.credit,
+      settledOn: input.credit ? null : toDbDate(input.saleDate),
+      createdById: userId,
+      items: { create: lines },
+    },
+    include: { items: true },
+  });
+  await audit(tx, userId, 'sale.create', 'sale', sale.id, null, sale);
+  return sale;
 }
 
 type SaleWithPayments = Sale & { payments: Pick<Payment, 'amount' | 'status' | 'paymentDate'>[] };
@@ -199,6 +145,11 @@ export async function voidCreditSale(saleId: number, reason: string, userId: num
       data: { status: 'VOID', voidReason: reason.trim(), voidedAt: new Date(), voidedById: userId },
     });
     await audit(tx, userId, 'sale.void', 'sale', saleId, sale, updated);
+    // Its charge invoice is cancelled too; the number is never used again.
+    await tx.invoice.updateMany({
+      where: { saleId, status: 'ACTIVE' },
+      data: { status: 'VOID', cancelReason: reason.trim(), cancelledAt: new Date(), cancelledById: userId },
+    });
     return updated;
   });
 }
