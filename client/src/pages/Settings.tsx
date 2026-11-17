@@ -197,15 +197,27 @@ export function Settings() {
           <Section
             title="Water Billing"
             help="These apply to bills made from now on. Bills already made keep their own due date and penalty. Water rates are on their own page (button above)."
-            keys={['water_due_days', 'water_penalty_type', 'water_penalty_value', 'water_disconnect_months']}
+            keys={['water_due_rule', 'water_due_day', 'water_due_days', 'water_penalty_type', 'water_penalty_value', 'water_disconnect_months']}
             settings={data}
             onSaved={reload}
           >
             {(v, set) => (
               <div className="grid gap-4 sm:grid-cols-2">
-                <Field label="Due date: days after the meter reading">
-                  <input className="input tabular-nums" inputMode="numeric" value={v.water_due_days ?? ''} onChange={set('water_due_days')} />
+                <Field label="Due date of new bills">
+                  <select className="input" value={v.water_due_rule ?? 'DAY_OF_NEXT_MONTH'} onChange={set('water_due_rule')}>
+                    <option value="DAY_OF_NEXT_MONTH">A set day of the next month</option>
+                    <option value="DAYS_AFTER_READING">A number of days after the reading</option>
+                  </select>
                 </Field>
+                {v.water_due_rule === 'DAYS_AFTER_READING' ? (
+                  <Field label="Days after the meter reading">
+                    <input className="input tabular-nums" inputMode="numeric" value={v.water_due_days ?? ''} onChange={set('water_due_days')} />
+                  </Field>
+                ) : (
+                  <Field label="Due day of the month" hint="e.g. 15: an October reading is due November 15. Printed on the bill.">
+                    <input className="input tabular-nums" inputMode="numeric" value={v.water_due_day ?? ''} onChange={set('water_due_day')} />
+                  </Field>
+                )}
                 <Field label="Disconnection list: unpaid months" hint="Accounts with this many overdue months are listed. Nothing is disconnected automatically.">
                   <input className="input tabular-nums" inputMode="numeric" value={v.water_disconnect_months ?? ''} onChange={set('water_disconnect_months')} />
                 </Field>
@@ -218,6 +230,47 @@ export function Settings() {
                 <Field label={v.water_penalty_type === 'FIXED' ? 'Penalty amount (₱)' : 'Penalty percent (%)'} hint="Use 0 for no penalty.">
                   <input className="input tabular-nums" inputMode="decimal" value={v.water_penalty_value ?? ''} onChange={set('water_penalty_value')} />
                 </Field>
+              </div>
+            )}
+          </Section>
+
+          <Section
+            title="Printed Water Bills"
+            help="Shown on every printed bill."
+            keys={['coop_phone', 'coop_mobile', 'bill_paper', 'bill_preparer_name', 'bill_preparer_title', 'bill_cashier_name', 'bill_cashier_title', 'bill_manager_name', 'bill_manager_title']}
+            settings={data}
+            onSaved={reload}
+          >
+            {(v, set) => (
+              <div className="grid gap-4 sm:grid-cols-2">
+                <Field label="Phone No.">
+                  <input className="input" value={v.coop_phone ?? ''} onChange={set('coop_phone')} />
+                </Field>
+                <Field label="Mobile No.">
+                  <input className="input" value={v.coop_mobile ?? ''} onChange={set('coop_mobile')} />
+                </Field>
+                <Field label="Paper size" className="sm:col-span-2">
+                  <select className="input" value={v.bill_paper ?? 'LETTER'} onChange={set('bill_paper')}>
+                    <option value="LETTER">Short bond (Letter, 8.5 × 11 in)</option>
+                    <option value="LONG">Long bond (8.5 × 13 in)</option>
+                  </select>
+                </Field>
+                {(
+                  [
+                    ['bill_preparer', 'Prepared by'],
+                    ['bill_cashier', 'Second signature'],
+                    ['bill_manager', 'Third signature'],
+                  ] as const
+                ).map(([key, label]) => (
+                  <div key={key} className="contents">
+                    <Field label={`${label}: name`}>
+                      <input className="input" value={v[`${key}_name`] ?? ''} onChange={set(`${key}_name`)} />
+                    </Field>
+                    <Field label={`${label}: title`}>
+                      <input className="input" value={v[`${key}_title`] ?? ''} onChange={set(`${key}_title`)} />
+                    </Field>
+                  </div>
+                ))}
               </div>
             )}
           </Section>

@@ -11,9 +11,93 @@ import { allow, wrap } from '../middleware/auth';
 import { audit } from '../services/audit';
 import { RATE_CLASSES, RATE_CLASS_LABEL, termsOf, type RateClass, type Tier } from '../services/rates';
 import { getSettings } from '../services/settings';
+import { BILLS_PER_PAGE, buildPrintBills, missingReadings, printSettings } from '../services/billPrint';
 import { billJson, billState, saveReadings, unpaidBills } from '../services/water';
 
 export const waterRouter = Router();
+
+// ---- Printing bills ("WATER SERVICE BILLING", 4 to a page) --------------------------------------
+
+function printOptions(query: Record<string, unknown>, fallbackPeriod: string) {
+  const period = typeof query.period === 'string' && query.period ? query.period : fallbackPeriod;
+  if (!isPeriod(period)) throw new AppError(400, 'Please choose a valid month.');
+  const areaIds = String(query.areaIds ?? '')
+    .split(',')
+    .map(Number)
+    .filter((n) => Number.isInteger(n) && n > 0);
+  return {
+    period,
+    areaIds,
+    unpaidOnly: query.which === 'unpaid',
+    sort: query.sort === 'meter' ? ('METER' as const) : ('AREA' as const),
+  };
+}
+
+async function latestBilledPeriod(): Promise<string> {
+  const latest = await prisma.waterBill.findFirst({ orderBy: { period: 'desc' }, select: { period: true } });
+  return latest?.period ?? periodOf(todayManila());
+}
+
+// What a batch would print: counts per area, pages, and connections with no reading yet.
+waterRouter.get(
+  '/print/summary',
+  wrap(async (req, res) => {
+    const opts = printOptions(req.query, await latestBilledPeriod());
+    const [bills, missing, header, areas, periods] = await Promise.all([
+      buildPrintBills(opts),
+      missingReadings(opts.period, opts.areaIds),
+      printSettings(),
+      prisma.area.findMany({ orderBy: { id: 'asc' } }),
+      prisma.waterBill.findMany({ distinct: ['period'], select: { period: true }, orderBy: { period: 'desc' }, take: 36 }),
+    ]);
+    const byArea = areas
+      .map((a) => ({ id: a.id, name: a.name, bills: bills.filter((b) => b.areaId === a.id).length }))
+      .filter((a) => a.bills > 0);
+    res.json({
+      ...opts,
+      periods: periods.map((p) => p.period),
+      areas,
+      header,
+      bills: bills.length,
+      pages: Math.ceil(bills.length / BILLS_PER_PAGE),
+      // With one file per area, each area starts on a new page.
+      pagesPerArea: byArea.reduce((n, a) => n + Math.ceil(a.bills / BILLS_PER_PAGE), 0),
+      byArea,
+      missing,
+    });
+  }),
+);
+
+// The bills themselves, a page at a time so a big batch never times out.
+waterRouter.get(
+  '/print/bills',
+  wrap(async (req, res) => {
+    const offset = Math.max(0, Math.floor(Number(req.query.offset)) || 0);
+    const limit = Math.min(500, Math.max(1, Math.floor(Number(req.query.limit)) || 500));
+    const billIds = String(req.query.billIds ?? '')
+      .split(',')
+      .map(Number)
+      .filter((n) => Number.isInteger(n) && n > 0);
+    const all = billIds.length
+      ? await buildPrintBills({ billIds: billIds.slice(0, 500) })
+      : await buildPrintBills(printOptions(req.query, await latestBilledPeriod()));
+    res.json({ header: await printSettings(), total: all.length, offset, bills: all.slice(offset, offset + limit) });
+  }),
+);
+
+// Records that bills were printed, and by whom. Reprints simply add another record.
+waterRouter.post(
+  '/print/record',
+  wrap(async (req, res) => {
+    const { billIds } = z.object({ billIds: z.array(z.number().int().positive()).min(1).max(20000) }).parse(req.body);
+    const found = await prisma.waterBill.findMany({ where: { id: { in: billIds } }, select: { id: true } });
+    const { count } = await prisma.billPrint.createMany({
+      data: found.map((b) => ({ waterBillId: b.id, printedById: req.user!.id })),
+    });
+    await audit(prisma, req.user!.id, 'bills.print', 'water_bill', null, null, { count, billIds: found.map((b) => b.id) });
+    res.json({ recorded: count });
+  }),
+);
 
 function scheduleJson(s: Prisma.RateScheduleGetPayload<object> & { _count?: { bills: number }; createdByName?: string | null }) {
   const terms = termsOf(s);
@@ -87,7 +171,16 @@ waterRouter.get(
       rates[rateClass] = s ? scheduleJson(s) : null;
     }
     const settings = await getSettings(prisma);
-    res.json({ period, today: todayManila(), rows, rates, areas, dueDays: Number(settings.water_due_days) });
+    res.json({
+      period,
+      today: todayManila(),
+      rows,
+      rates,
+      areas,
+      dueDays: Number(settings.water_due_days),
+      dueRule: settings.water_due_rule,
+      dueDay: Number(settings.water_due_day),
+    });
   }),
 );
 
@@ -182,9 +275,10 @@ waterRouter.get(
       include: { payments: true, reading: true, rateSchedule: true, connection: { include: { account: { include: { area: true } } } } },
     });
     if (!bill) throw notFound('This water bill');
-    const [earlier, settings] = await Promise.all([
+    const [earlier, settings, lastPrint] = await Promise.all([
       unpaidBills(prisma, { connectionId: bill.connectionId, period: { lt: bill.period } }),
       getSettings(prisma),
+      prisma.billPrint.findFirst({ where: { waterBillId: id }, orderBy: { printedAt: 'desc' }, include: { printedBy: { select: { name: true } } } }),
     ]);
     const previous = earlier.map((b) => ({ period: b.period, balance: billState(b, b.payments).balance }));
     const previousBalance = previous.reduce((sum, b) => sum.plus(b.balance), new Prisma.Decimal(0));
@@ -199,6 +293,7 @@ waterRouter.get(
       previousBalance: previousBalance.toFixed(2),
       previousMonths: previous.map((b) => periodLabel(b.period)),
       totalDue: previousBalance.plus(json.balance).toFixed(2),
+      lastPrinted: lastPrint ? { at: lastPrint.printedAt.toISOString(), by: lastPrint.printedBy.name } : null,
       coop: { name: settings.coop_name, address: settings.coop_address, cdaNo: settings.coop_cda_no },
     });
   }),

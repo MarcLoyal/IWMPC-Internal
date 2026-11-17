@@ -78,6 +78,7 @@ model User {
   paymentsCreated Payment[]  @relation("PaymentCreatedBy")
   paymentsVoided  Payment[]  @relation("PaymentVoidedBy")
   auditLogs       AuditLog[]
+  billPrints      BillPrint[]
   priceChanges    PriceChange[]
   salesCreated    Sale[]     @relation("SaleCreatedBy")
 
@@ -253,6 +254,7 @@ model WaterBill {
   reading      MeterReading    @relation(fields: [readingId], references: [id])
   rateSchedule RateSchedule    @relation(fields: [rateScheduleId], references: [id])
   payments     Payment[]
+  prints       BillPrint[]
 
   @@unique([connectionId, period])
   @@index([settledOn])
@@ -421,4 +423,18 @@ model AuditLog {
   @@index([entity, entityId])
   @@index([createdAt])
   @@map("audit_log")
+}
+
+// Each time a water bill is printed (alone or in a batch). Reprints add another row.
+model BillPrint {
+  id          Int      @id @default(autoincrement())
+  waterBillId Int      @map("water_bill_id")
+  printedById Int      @map("printed_by")
+  printedAt   DateTime @default(now()) @map("printed_at")
+
+  waterBill WaterBill @relation(fields: [waterBillId], references: [id])
+  printedBy User      @relation(fields: [printedById], references: [id])
+
+  @@index([waterBillId])
+  @@map("bill_prints")
 }

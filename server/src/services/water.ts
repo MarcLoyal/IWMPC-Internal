@@ -2,7 +2,7 @@ import { Prisma, type Payment, type WaterBill } from '@prisma/client';
 import { prisma, type Db } from '../lib/prisma';
 import { AppError, notFound } from '../lib/errors';
 import { fromDbDate, toDbDate, todayManila } from '../lib/dates';
-import { addDays, daysBetween, periodLabel } from '../lib/periods';
+import { daysBetween, dueDateFor, periodLabel } from '../lib/periods';
 import { audit } from './audit';
 import { computeWaterCharge, scheduleFor, termsOf } from './rates';
 import { getSettings } from './settings';
@@ -151,7 +151,7 @@ export async function saveReadings(
         amount,
         penaltyAmount: penaltyFor(amount, settings.water_penalty_type, settings.water_penalty_value),
         billDate: toDbDate(readDate),
-        dueDate: toDbDate(addDays(readDate, dueDays)),
+        dueDate: toDbDate(dueDateFor(period, readDate, settings.water_due_rule, parseInt(settings.water_due_day, 10) || 15, dueDays)),
         rateScheduleId: schedule.id,
       };
       const reading = { previousReading, currentReading: input.currentReading, readDate: toDbDate(readDate), enteredById: userId };

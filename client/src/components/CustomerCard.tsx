@@ -3,6 +3,8 @@ import { formatDate, peso } from '../lib/format';
 import type { Connection, WaterBill } from '../lib/types';
 import { BILL_STATUS, RATE_CLASS, monthShort } from '../lib/water';
 import { BillModal } from './BillModal';
+import { errorMessage } from '../lib/api';
+import { printOneBill } from '../lib/printBills';
 import { Badge, Card } from './ui';
 
 /**
@@ -14,6 +16,22 @@ export function CustomerCard({ name, connection, bills }: { name: string; connec
   const years = Array.from(new Set([thisYear, ...bills.map((b) => b.period.slice(0, 4))])).sort().reverse();
   const [year, setYear] = useState(years[0]);
   const [openBill, setOpenBill] = useState<number | null>(null);
+  const [printing, setPrinting] = useState<number | null>(null);
+  const [lastTried, setLastTried] = useState<number | null>(null);
+  const [printError, setPrintError] = useState('');
+
+  async function printBill(id: number) {
+    setPrinting(id);
+    setLastTried(id);
+    setPrintError('');
+    try {
+      await printOneBill(id);
+    } catch (err) {
+      setPrintError(errorMessage(err));
+    } finally {
+      setPrinting(null);
+    }
+  }
   const byPeriod = new Map(bills.map((b) => [b.period, b]));
   const months = Array.from({ length: 12 }, (_, i) => `${year}-${String(12 - i).padStart(2, '0')}`);
   const yearBills = months.map((m) => byPeriod.get(m)).filter((b): b is WaterBill => !!b);
@@ -100,9 +118,15 @@ export function CustomerCard({ name, connection, bills }: { name: string; connec
                     {b.status !== 'PAID' && Number(b.paid) > 0 && (
                       <span className="block text-sm text-slate-600">{peso(b.balance)} left</span>
                     )}
-                    <button type="button" onClick={() => setOpenBill(b.id)} className="no-print block text-sm font-semibold text-brand-700 hover:underline">
-                      Open bill
-                    </button>
+                    <span className="no-print flex gap-3 text-sm font-semibold">
+                      <button type="button" onClick={() => setOpenBill(b.id)} className="text-brand-700 hover:underline">
+                        Open bill
+                      </button>
+                      <button type="button" onClick={() => void printBill(b.id)} disabled={printing === b.id} className="text-brand-700 hover:underline disabled:text-slate-400">
+                        {printing === b.id ? 'Preparing…' : 'Print bill'}
+                      </button>
+                    </span>
+                    {printError && printing === null && lastTried === b.id && <span className="block text-sm text-red-700">{printError}</span>}
                   </td>
                 </tr>
               );
