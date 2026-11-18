@@ -1,4 +1,21 @@
 export type Role = 'ADMIN' | 'CASHIER' | 'STAFF' | 'BOARD';
+
+/** Work a role includes, or that an Admin can give a user as extra access. */
+export type Work = 'CASHIER' | 'READINGS' | 'ACCOUNTS' | 'PRINT';
+
+export interface AccessGrant {
+  id: number;
+  work: Work;
+  label: string;
+  requestedBy: string;
+  reason: string;
+  endsOn: string | null;
+  grantedAt: string;
+  grantedBy: string;
+  removedAt: string | null;
+  removedBy: string | null;
+  removeReason: string | null;
+}
 export type PaymentType = 'WATER_BILL' | 'INSTALLATION_FEE' | 'MEMBERSHIP_FEE' | 'SHARE_CAPITAL' | 'RICE_LPG' | 'OTHER';
 export type BillStatus = 'PAID' | 'UNPAID' | 'DUE_SOON' | 'OVERDUE';
 export type RateClass = 'RESIDENTIAL' | 'COMMERCIAL';
@@ -105,6 +122,8 @@ export interface User {
   email: string;
   role: Role;
   status: 'ACTIVE' | 'INACTIVE';
+  /** What this user can do now (only on the logged-in user). */
+  work?: Work[];
 }
 
 export interface Area {

@@ -47,8 +47,8 @@ function warningFor(row: Row, current: number): string | null {
 }
 
 export function WaterReadings() {
-  const { can } = useAuth();
-  const canEnter = can('ADMIN', 'STAFF');
+  const { canDo } = useAuth();
+  const canEnter = canDo('READINGS');
   const [params, setParams] = useSearchParams();
   const period = params.get('period') || currentPeriod();
   const areaId = params.get('areaId') ?? '';
@@ -109,7 +109,7 @@ export function WaterReadings() {
   return (
     <>
       <PageHeader title="Meter Readings" subtitle="Enter the monthly meter readings. The water bills are made from them.">
-        {can('ADMIN', 'STAFF', 'CASHIER') && (
+        {canDo('PRINT') && (
           <LinkButton to="/water/print" variant="primary">
             Print Bills
           </LinkButton>

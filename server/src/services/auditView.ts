@@ -80,10 +80,14 @@ const FIELD_LABEL: Record<string, string> = {
   method: 'Rate method',
   count: 'Number of bills',
   path: 'Page or action',
+  workLabel: 'Work',
+  requestedBy: 'Requested by',
+  endsOn: 'Ends on',
+  removeReason: 'Reason for removing',
 };
 
 // Never shown: internal ids, timestamps the entry already has, and anything secret.
-const HIDDEN = new Set(['id', 'createdAt', 'createdById', 'passwordHash', 'voidedById', 'cancelledById', 'enteredById', 'rateScheduleId', 'readingId', 'billIds', 'payments', 'storageKey', 'data']);
+const HIDDEN = new Set(['work', 'id', 'createdAt', 'createdById', 'passwordHash', 'voidedById', 'cancelledById', 'enteredById', 'rateScheduleId', 'readingId', 'billIds', 'payments', 'storageKey', 'data']);
 const MONEY = new Set(['amount', 'total', 'price', 'memberPrice', 'penaltyAmount', 'minimumCharge', 'sharesAmount', 'oldPrice', 'newPrice', 'oldMemberPrice', 'newMemberPrice']);
 
 const WORDS: Record<string, string> = {
@@ -209,6 +213,18 @@ function summarize(entry: AuditLog, names: Names): string {
       return `Edited user ${txt(a.name || b.name)} and set a new password`;
     case 'user.change-password':
       return 'Changed their own password';
+    case 'user.access-grant':
+    case 'user.access-remove':
+    case 'user.access-expire': {
+      const name = (entry.entityId && names.userName(Number(entry.entityId))) || 'a user';
+      const work = txt(a.workLabel || b.workLabel);
+      if (entry.action === 'user.access-grant') {
+        const until = a.endsOn ? `until ${day.format(new Date(`${txt(a.endsOn)}T00:00:00Z`))}` : 'with no end date';
+        return `Gave ${name} extra access: ${work} (${until}) · requested by ${txt(a.requestedBy)}`;
+      }
+      if (entry.action === 'user.access-expire') return `Extra access ended on its end date: ${name} · ${work}`;
+      return `Removed extra access from ${name}: ${work}`;
+    }
     case 'login':
       return 'Logged in';
     case 'logout':
@@ -258,6 +274,7 @@ function summarize(entry: AuditLog, names: Names): string {
 
 function reasonOf(entry: AuditLog): string {
   const a = (isObject(entry.after) ? entry.after : {}) as Json;
+  if (entry.action === 'user.access-remove' || entry.action === 'user.access-expire') return txt(a.removeReason || '').trim();
   return txt(a.voidReason || a.cancelReason || a.reason || '').trim();
 }
 

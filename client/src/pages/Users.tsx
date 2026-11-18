@@ -1,17 +1,35 @@
 import { useState } from 'react';
 import { api, errorMessage } from '../lib/api';
 import { useAuth } from '../lib/auth';
-import { ROLE, ROLE_CAN } from '../lib/format';
-import type { Role, User } from '../lib/types';
+import { formatDate, ROLE, ROLE_CAN } from '../lib/format';
+import type { AccessGrant, Role, User, Work } from '../lib/types';
+import { AccessDialog } from '../components/AccessDialog';
 import { useLoad } from '../lib/useLoad';
 import { Badge, Button, Card, Field, LinkButton, Loading, Modal, Notice, PageHeader } from '../components/ui';
 
 const ROLES: Role[] = ['ADMIN', 'CASHIER', 'STAFF', 'BOARD'];
 
+export interface UserRow extends User {
+  roleWork: Work[];
+  canGetExtra: boolean;
+  grants: AccessGrant[];
+}
+
+export type WorkList = { key: Work; label: string }[];
+
+const SHORT_WORK: Record<Work, string> = {
+  CASHIER: 'Cashier',
+  READINGS: 'Meter readings',
+  ACCOUNTS: 'Accounts',
+  PRINT: 'Printing bills',
+};
+
 export function Users() {
   const { user: me } = useAuth();
-  const { data, error, loading, reload } = useLoad<{ users: User[] }>('/users');
+  const { data, error, loading, reload } = useLoad<{ users: UserRow[]; work: WorkList }>('/users');
   const [editing, setEditing] = useState<User | 'new' | null>(null);
+  const [access, setAccess] = useState<number | null>(null);
+  const accessUser = data?.users.find((u) => u.id === access) ?? null;
 
   return (
     <>
@@ -43,11 +61,24 @@ export function Users() {
                       {u.name} {u.id === me?.id && <span className="font-normal text-slate-500">(you)</span>}
                     </td>
                     <td className="td">{u.email}</td>
-                    <td className="td">{ROLE[u.role]}</td>
+                    <td className="td">
+                      {ROLE[u.role]}
+                      {u.grants
+                        .filter((g) => !g.removedAt)
+                        .map((g) => (
+                          <span key={g.id} className="mt-1 block">
+                            <Badge tone="yellow" small>
+                              + {SHORT_WORK[g.work]}
+                              {g.endsOn ? ` until ${formatDate(g.endsOn)}` : ''}
+                            </Badge>
+                          </span>
+                        ))}
+                    </td>
                     <td className="td">{u.status === 'ACTIVE' ? <Badge tone="green">Active</Badge> : <Badge tone="gray">Deactivated</Badge>}</td>
                     <td className="td text-right">
                       <div className="flex justify-end gap-2">
                         <LinkButton to={`/settings/audit?userId=${u.id}`}>History</LinkButton>
+                        {u.canGetExtra && u.status === 'ACTIVE' && <Button onClick={() => setAccess(u.id)}>Extra access</Button>}
                         <Button onClick={() => setEditing(u)}>Edit</Button>
                       </div>
                     </td>
@@ -58,6 +89,7 @@ export function Users() {
           </div>
         </Card>
       )}
+      {accessUser && data && <AccessDialog user={accessUser} work={data.work} onClose={() => setAccess(null)} onChanged={() => void reload()} />}
       {editing && (
         <UserDialog
           user={editing === 'new' ? null : editing}

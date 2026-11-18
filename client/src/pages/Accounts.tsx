@@ -15,7 +15,7 @@ function lastPurchaseText(p: NonNullable<AccountRow['lastPurchase']>): string {
 }
 
 export function Accounts() {
-  const { can } = useAuth();
+  const { canDo } = useAuth();
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
   const [search, setSearch] = useState(params.get('search') ?? '');
@@ -75,7 +75,7 @@ export function Accounts() {
   return (
     <>
       <PageHeader title="Accounts">
-        {can('ADMIN', 'STAFF') && (
+        {canDo('ACCOUNTS') && (
           <LinkButton to="/accounts/new" variant="primary">
             + New Account
           </LinkButton>

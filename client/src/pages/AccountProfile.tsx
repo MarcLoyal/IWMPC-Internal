@@ -28,7 +28,7 @@ const CONNECTION_TONE = { PENDING_INSTALLATION: 'yellow', ACTIVE: 'green', DISCO
 
 export function AccountProfile() {
   const { id } = useParams();
-  const { can } = useAuth();
+  const { can, canDo } = useAuth();
   const { data, error, loading, reload } = useLoad<Profile>(`/accounts/${id}`);
   const settings = useLoad<Settings>('/settings');
   const [tab, setTab] = useState<Tab>('info');
@@ -42,7 +42,7 @@ export function AccountProfile() {
   if (!data) return null;
 
   const { account, connections, payments, owed, warnings, bills, water, purchases, riceLpg } = data;
-  const canEdit = can('ADMIN', 'STAFF');
+  const canEdit = canDo('ACCOUNTS');
   const lastPayment = payments.find((p) => p.status === 'ACTIVE');
   const activeConnections = connections.filter((c) => c.status === 'ACTIVE').length;
   const shownPayments = typeFilter ? payments.filter((p) => p.type === typeFilter) : payments;
@@ -104,7 +104,7 @@ export function AccountProfile() {
             Waiting for the membership fee ({peso(settings.data?.membership_fee ?? 0)}). This account becomes a Member once the
             Cashier records the payment.
           </span>
-          {can('ADMIN', 'CASHIER') && (
+          {canDo('CASHIER') && (
             <LinkButton to={`/cashier?account=${account.id}`} variant="primary">
               Go to Cashier
             </LinkButton>

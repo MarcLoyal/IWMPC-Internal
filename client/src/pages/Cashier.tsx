@@ -55,9 +55,9 @@ function StepTitle({ n, children }: { n: number; children: React.ReactNode }) {
 const owedKey = (o: OwedItem) => (o.waterBillId ? `bill-${o.waterBillId}` : o.saleId ? `sale-${o.saleId}` : `owed-${o.type}`);
 
 export function Cashier() {
-  const { can } = useAuth();
+  const { canDo } = useAuth();
   const navigate = useNavigate();
-  const canReceive = can('ADMIN', 'CASHIER');
+  const canReceive = canDo('CASHIER');
   const [params, setParams] = useSearchParams();
   const accountId = params.get('account');
   // A buyer with no account. Only Rice & LPG can be sold to a walk-in.

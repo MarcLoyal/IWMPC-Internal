@@ -4,6 +4,8 @@ import type { Role, User } from '@prisma/client';
 import { prisma } from '../lib/prisma';
 import { AppError } from '../lib/errors';
 import { audit } from '../services/audit';
+import { workOf } from '../services/access';
+import type { Work } from '../lib/work';
 
 export const COOKIE_NAME = 'iwmpc_session';
 const SESSION_HOURS = 12;
@@ -13,6 +15,8 @@ declare global {
   namespace Express {
     interface Request {
       user?: User;
+      /** What this user can do now: their role's work plus open extra access. */
+      work?: Set<Work>;
     }
   }
 }
@@ -71,6 +75,7 @@ export const requireUser: RequestHandler = (req: Request, _res: Response, next: 
     const user = await prisma.user.findUnique({ where: { id: userId } });
     if (!user || user.status !== 'ACTIVE') throw new AppError(401, 'Please log in.');
     req.user = user;
+    req.work = await workOf(user);
   })().then(() => next(), next);
 };
 
@@ -78,25 +83,41 @@ export const requireUser: RequestHandler = (req: Request, _res: Response, next: 
 export const allow =
   (...roles: Role[]): RequestHandler =>
   (req, _res, next) => {
-    if (!req.user || !roles.includes(req.user.role)) {
-      const denied = new AppError(403, 'Your user account is not allowed to do this.');
-      if (!req.user) {
-        next(denied);
-        return;
-      }
-      // Record the attempt, then refuse it. The path has no query string, so nothing typed into a search is kept.
-      audit(prisma, req.user.id, 'access.denied', 'access', null, null, {
-        method: req.method,
-        path: (req.baseUrl + req.path).replace(/(.)\/+$/, '$1'),
-        role: req.user.role,
-      }).then(
-        () => next(denied),
-        (err) => {
-          console.error(err);
-          next(denied);
-        },
-      );
+    if (req.user && roles.includes(req.user.role)) {
+      next();
       return;
     }
-    next();
+    refuse(req, next);
   };
+
+/** Allows users whose role includes this work, or who were given it as extra access. Use after requireUser. */
+export const allowWork =
+  (work: Work): RequestHandler =>
+  (req, _res, next) => {
+    if (req.user && req.work?.has(work)) {
+      next();
+      return;
+    }
+    refuse(req, next, work);
+  };
+
+// Record the attempt, then refuse it. The path has no query string, so nothing typed into a search is kept.
+function refuse(req: Request, next: NextFunction, work?: Work) {
+  const denied = new AppError(403, 'Your user account is not allowed to do this.');
+  if (!req.user) {
+    next(denied);
+    return;
+  }
+  audit(prisma, req.user.id, 'access.denied', 'access', null, null, {
+    method: req.method,
+    path: (req.baseUrl + req.path).replace(/(.)\/+$/, '$1'),
+    role: req.user.role,
+    ...(work ? { work } : {}),
+  }).then(
+    () => next(denied),
+    (err) => {
+      console.error(err);
+      next(denied);
+    },
+  );
+}

@@ -7,7 +7,7 @@ import { isDateString, todayManila } from '../lib/dates';
 import { parseMoney } from '../lib/money';
 import { idParam } from '../lib/params';
 import { isPeriod, periodLabel, periodOf } from '../lib/periods';
-import { allow, wrap } from '../middleware/auth';
+import { allow, allowWork, wrap } from '../middleware/auth';
 import { audit } from '../services/audit';
 import { RATE_CLASSES, RATE_CLASS_LABEL, termsOf, type RateClass, type Tier } from '../services/rates';
 import { getSettings } from '../services/settings';
@@ -39,7 +39,7 @@ function printOptions(query: Record<string, unknown>, fallbackPeriod: string) {
 }
 
 // Printing puts signatures into the PDF, so only the roles who hand out bills may print.
-const canPrint = allow('ADMIN', 'STAFF', 'CASHIER');
+const canPrint = allowWork('PRINT');
 
 async function latestBilledPeriod(): Promise<string> {
   const latest = await prisma.waterBill.findFirst({ orderBy: { period: 'desc' }, select: { period: true } });
@@ -243,7 +243,7 @@ const readingsSchema = z.object({
 
 waterRouter.post(
   '/readings',
-  allow('ADMIN', 'STAFF'),
+  allowWork('READINGS'),
   wrap(async (req, res) => {
     const { period, readDate, readings } = readingsSchema.parse(req.body);
     if (readDate > todayManila()) throw new AppError(400, 'The reading date cannot be in the future.');

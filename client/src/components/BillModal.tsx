@@ -17,7 +17,7 @@ import { formatDate } from '../lib/format';
  */
 export function BillModal({ billId, onClose }: { billId: number; onClose: () => void }) {
   const { data, error, loading, reload } = useLoad<BillView>(`/water/bills/${billId}`);
-  const canPrint = useAuth().can('ADMIN', 'STAFF', 'CASHIER');
+  const canPrint = useAuth().canDo('PRINT');
   const [printing, setPrinting] = useState(false);
   const [printError, setPrintError] = useState('');
   // A paid bill opens on its invoice; an unpaid one shows only the billing.

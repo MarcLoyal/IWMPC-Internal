@@ -6,6 +6,7 @@ import { AppError } from '../lib/errors';
 import { userJson } from '../lib/serialize';
 import { endSession, requireUser, sessionUserId, startSession, wrap } from '../middleware/auth';
 import { audit } from '../services/audit';
+import { workOf } from '../services/access';
 
 export const authRouter = Router();
 
@@ -31,7 +32,7 @@ authRouter.post(
     }
     startSession(res, user.id);
     await audit(prisma, user.id, 'login', 'user', user.id);
-    res.json({ user: userJson(user) });
+    res.json({ user: { ...userJson(user), work: [...(await workOf(user))] } });
   }),
 );
 
@@ -73,5 +74,5 @@ authRouter.post(
 );
 
 authRouter.get('/me', requireUser, (req, res) => {
-  res.json({ user: userJson(req.user!) });
+  res.json({ user: { ...userJson(req.user!), work: [...(req.work ?? [])] } });
 });

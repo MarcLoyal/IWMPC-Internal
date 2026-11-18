@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { api, setLoggedOutHandler } from './api';
-import type { Role, User } from './types';
+import type { Role, User, Work } from './types';
 
 interface AuthState {
   user: User | null;
@@ -9,6 +9,8 @@ interface AuthState {
   logout: () => Promise<void>;
   /** True if the logged-in user has one of these roles. */
   can: (...roles: Role[]) => boolean;
+  /** True if the logged-in user can do this work: through their role, or extra access from an Admin. */
+  canDo: (work: Work) => boolean;
 }
 
 const AuthContext = createContext<AuthState | null>(null);
@@ -37,7 +39,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const value = useMemo<AuthState>(
-    () => ({ user, loading, login, logout, can: (...roles) => !!user && roles.includes(user.role) }),
+    () => ({
+      user,
+      loading,
+      login,
+      logout,
+      can: (...roles) => !!user && roles.includes(user.role),
+      canDo: (work) => !!user?.work?.includes(work),
+    }),
     [user, loading, login, logout],
   );
 

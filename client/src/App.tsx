@@ -23,11 +23,11 @@ import { Overdue } from './pages/Overdue';
 import { PrintBills } from './pages/PrintBills';
 import { WaterRates } from './pages/WaterRates';
 import { WaterReadings } from './pages/WaterReadings';
-import type { Role } from './lib/types';
+import type { Role, Work } from './lib/types';
 
-function Only({ roles, children }: { roles: Role[]; children: JSX.Element }) {
-  const { can } = useAuth();
-  const allowed = can(...roles);
+function Only({ roles, work, children }: { roles?: Role[]; work?: Work; children: JSX.Element }) {
+  const { can, canDo } = useAuth();
+  const allowed = work ? canDo(work) : can(...(roles ?? []));
   const { pathname } = useLocation();
   // Put the refused page on record in the Audit Log.
   useEffect(() => {
@@ -57,13 +57,13 @@ export function App() {
       <Route element={<Layout />}>
         <Route index element={<Home />} />
         <Route path="accounts" element={<Accounts />} />
-        <Route path="accounts/new" element={<Only roles={['ADMIN', 'STAFF']}><AccountForm /></Only>} />
+        <Route path="accounts/new" element={<Only work="ACCOUNTS"><AccountForm /></Only>} />
         <Route path="accounts/:id" element={<AccountProfile />} />
-        <Route path="accounts/:id/edit" element={<Only roles={['ADMIN', 'STAFF']}><AccountForm /></Only>} />
-        <Route path="accounts/:id/make-member" element={<Only roles={['ADMIN', 'STAFF']}><AccountForm makeMember /></Only>} />
+        <Route path="accounts/:id/edit" element={<Only work="ACCOUNTS"><AccountForm /></Only>} />
+        <Route path="accounts/:id/make-member" element={<Only work="ACCOUNTS"><AccountForm makeMember /></Only>} />
         <Route path="water" element={<WaterReadings />} />
         <Route path="water/overdue" element={<Overdue />} />
-        <Route path="water/print" element={<Only roles={['ADMIN', 'STAFF', 'CASHIER']}><PrintBills /></Only>} />
+        <Route path="water/print" element={<Only work="PRINT"><PrintBills /></Only>} />
         <Route path="water/bills/:id" element={<BillNotice />} />
         <Route path="settings/water-rates" element={<Only roles={['ADMIN']}><WaterRates /></Only>} />
         <Route path="cashier" element={<Cashier />} />

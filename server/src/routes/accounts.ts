@@ -8,7 +8,7 @@ import { isDateString, toDbDate, todayManila } from '../lib/dates';
 import { parseMoney } from '../lib/money';
 import { idParam } from '../lib/params';
 import { accountDetail, accountRow, connectionJson, paymentJson } from '../lib/serialize';
-import { allow, wrap } from '../middleware/auth';
+import { allow, allowWork, wrap } from '../middleware/auth';
 import { audit } from '../services/audit';
 import { NO_ACTIVE_CONNECTION, startMembership, type MembershipDetails } from '../services/membership';
 import { nextNumber } from '../services/numbering';
@@ -317,7 +317,7 @@ accountsRouter.get(
 
 accountsRouter.post(
   '/',
-  allow('ADMIN', 'STAFF'),
+  allowWork('ACCOUNTS'),
   wrap(async (req, res) => {
     const data = accountSchema.parse(req.body);
     if (!(await prisma.area.findUnique({ where: { id: data.areaId } }))) {
@@ -436,7 +436,7 @@ accountsRouter.get(
 
 accountsRouter.put(
   '/:id',
-  allow('ADMIN', 'STAFF'),
+  allowWork('ACCOUNTS'),
   wrap(async (req, res) => {
     const id = idParam(req.params.id, 'This account');
     const data = accountSchema.parse(req.body);
@@ -468,7 +468,7 @@ accountsRouter.put(
 // "Make a Member": saves the whole Application for Membership form, then waits for the fee.
 accountsRouter.post(
   '/:id/make-member',
-  allow('ADMIN', 'STAFF'),
+  allowWork('ACCOUNTS'),
   wrap(async (req, res) => {
     const id = idParam(req.params.id, 'This account');
     const account = await prisma.account.findUnique({ where: { id } });
@@ -512,7 +512,7 @@ const connectionSchema = z.object({
 
 accountsRouter.post(
   '/:id/connections',
-  allow('ADMIN', 'STAFF'),
+  allowWork('ACCOUNTS'),
   wrap(async (req, res) => {
     const id = idParam(req.params.id, 'This account');
     const data = connectionSchema.parse(req.body);
@@ -570,7 +570,7 @@ const statusSchema = z.object({
 // Pending Installation -> Active -> Disconnected (and Disconnected -> Active to reconnect).
 connectionsRouter.patch(
   '/:id',
-  allow('ADMIN', 'STAFF'),
+  allowWork('ACCOUNTS'),
   wrap(async (req, res) => {
     const id = idParam(req.params.id, 'This connection');
     const { status, installationDate, initialReading } = statusSchema.parse(req.body);

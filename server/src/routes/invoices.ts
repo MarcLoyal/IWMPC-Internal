@@ -5,7 +5,7 @@ import { prisma } from '../lib/prisma';
 import { AppError } from '../lib/errors';
 import { parseMoney } from '../lib/money';
 import { idParam } from '../lib/params';
-import { allow, wrap } from '../middleware/auth';
+import { allow, allowWork, wrap } from '../middleware/auth';
 import { cancelInvoiceTx } from '../services/payments';
 import { checkNumber, createInvoice, invoiceGuide, invoiceSeries, previewGuide, suggestNumber, type InvoiceItem, type NewInvoice } from '../services/invoices';
 
@@ -49,7 +49,7 @@ const parse = (body: unknown): NewInvoice => {
   return { ...d, items: d.items as InvoiceItem[] };
 };
 
-const cashier = allow('ADMIN', 'CASHIER');
+const cashier = allowWork('CASHIER');
 
 // The next number for this cashier (their last + 1) and the booklet series.
 invoicesRouter.get(

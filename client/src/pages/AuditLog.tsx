@@ -205,7 +205,7 @@ function Row({ entry: e }: { entry: Entry }) {
       )}
       <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-slate-600">
         <span>
-          By <strong className="text-slate-800">{e.user ? e.user.name : 'Unknown person'}</strong>
+          By <strong className="text-slate-800">{e.user ? e.user.name : e.action === 'user.access-expire' ? 'the system (end date reached)' : 'Unknown person'}</strong>
           {e.user && ` · ${ROLE[e.user.role]}`}
         </span>
         {e.account && (

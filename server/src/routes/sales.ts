@@ -6,7 +6,7 @@ import { AppError } from '../lib/errors';
 import { fromDbDate, isDateString, toDbDate, todayManila } from '../lib/dates';
 import { idParam } from '../lib/params';
 import { paymentJson, saleItemJson } from '../lib/serialize';
-import { allow, wrap } from '../middleware/auth';
+import { allow, allowWork, wrap } from '../middleware/auth';
 import { getSettings } from '../services/settings';
 import { WALK_IN, voidCreditSale } from '../services/sales';
 import { createSale } from '../services/invoices';
@@ -39,7 +39,7 @@ const saleSchema = z.object({
 // A new Rice & LPG sale: one or more items under one OR number.
 salesRouter.post(
   '/',
-  allow('ADMIN', 'CASHIER'),
+  allowWork('CASHIER'),
   wrap(async (req, res) => {
     const data = saleSchema.parse(req.body);
     const { sale, payment } = await createSale({ ...data, accountId: data.accountId ?? null }, req.user!.id);

@@ -6,7 +6,7 @@ import { parseMoney } from '../lib/money';
 import { normalizeOr } from '../lib/orNumbers';
 import { idParam } from '../lib/params';
 import { paymentJson } from '../lib/serialize';
-import { allow, wrap } from '../middleware/auth';
+import { allow, allowWork, wrap } from '../middleware/auth';
 import { voidPayment } from '../services/payments';
 import { recordPayment } from '../services/invoices';
 
@@ -38,7 +38,7 @@ const paymentSchema = z.object({
 
 paymentsRouter.post(
   '/',
-  allow('ADMIN', 'CASHIER'),
+  allowWork('CASHIER'),
   wrap(async (req, res) => {
     const data = paymentSchema.parse(req.body);
     const amount = parseMoney(data.amount);

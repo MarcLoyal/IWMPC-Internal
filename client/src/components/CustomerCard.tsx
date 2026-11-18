@@ -17,7 +17,7 @@ export function CustomerCard({ name, connection, bills }: { name: string; connec
   const years = Array.from(new Set([thisYear, ...bills.map((b) => b.period.slice(0, 4))])).sort().reverse();
   const [year, setYear] = useState(years[0]);
   const [openBill, setOpenBill] = useState<number | null>(null);
-  const canPrint = useAuth().can('ADMIN', 'STAFF', 'CASHIER');
+  const canPrint = useAuth().canDo('PRINT');
   const [printing, setPrinting] = useState<number | null>(null);
   const [lastTried, setLastTried] = useState<number | null>(null);
   const [printError, setPrintError] = useState('');
