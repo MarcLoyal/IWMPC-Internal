@@ -2,6 +2,8 @@ import type { Prisma } from '@prisma/client';
 import { prisma } from '../lib/prisma';
 import { AppError } from '../lib/errors';
 import { audit } from './audit';
+import { getSettings } from './settings';
+import { formatPeso } from '../lib/money';
 
 /**
  * The one-time go-live cleanup: removes the demo data so the client starts clean, then locks
@@ -34,6 +36,8 @@ export const KEPT_TABLES = ['areas', 'settings', 'rate_schedules', 'products', '
 export const isDemoEmail = (email: string) => email.toLowerCase().endsWith('@iwmpc.test');
 
 export const GO_LIVE_ACTION = 'system.go-live';
+/** The reason the sample data gives its prices (see scripts/seed.ts). */
+export const SAMPLE_PRICE_REASON = 'Sample price for the preview';
 export const CONFIRM_WORDS = 'GO LIVE';
 
 const COUNTED = {
@@ -79,6 +83,31 @@ async function notDemo(db: Prisma.TransactionClient | typeof prisma) {
   return rows.filter((r) => r.total > 0);
 }
 
+/**
+ * Prices still at the sample data's value: the last change to them was the sample one. These go
+ * back to "not set" (₱0.00), so the Cashier refuses to sell them until an Admin sets a real price.
+ */
+async function samplePrices(db: Prisma.TransactionClient | typeof prisma) {
+  const changes = await db.priceChange.findMany({ orderBy: { id: 'desc' }, include: { unit: { include: { product: true } } } });
+  const latest = new Map<number, (typeof changes)[number]>();
+  for (const c of changes) if (!latest.has(c.productUnitId)) latest.set(c.productUnitId, c);
+  return [...latest.values()]
+    .filter((c) => c.reason === SAMPLE_PRICE_REASON && c.unit.price.equals(c.newPrice))
+    .map((c) => ({ unitId: c.productUnitId, name: `${c.unit.product.name}, ${c.unit.label}`, price: formatPeso(c.unit.price) }));
+}
+
+/** Fees the Admin should confirm are the real ones. They are kept as they are. */
+async function feesToCheck() {
+  const s = await getSettings(prisma);
+  const penalty = s.water_penalty_type === 'PERCENT' ? `${s.water_penalty_value}%` : formatPeso(s.water_penalty_value);
+  return [
+    { label: 'Membership fee', value: formatPeso(s.membership_fee) },
+    { label: 'Installation fee', value: formatPeso(s.installation_fee) },
+    { label: 'Reconnection fee', value: formatPeso(s.reconnection_fee) },
+    { label: 'Late payment penalty', value: penalty },
+  ];
+}
+
 /** Who ran the cleanup and when, if it has been run. */
 export async function goLiveDone() {
   const entry = await prisma.auditLog.findFirst({ where: { action: GO_LIVE_ACTION }, include: { user: { select: { name: true } } } });
@@ -95,6 +124,8 @@ export async function goLivePreview() {
     remove: await counts(prisma),
     users: users.map((u) => ({ ...u, demo: isDemoEmail(u.email) })),
     notDemo: await notDemo(prisma),
+    samplePrices: await samplePrices(prisma),
+    fees: await feesToCheck(),
   };
 }
 
@@ -128,6 +159,9 @@ export async function runGoLive(input: GoLiveInput, adminId: number) {
       }
 
       const removed = await counts(tx);
+      // Before the price history is emptied: it is what shows which prices are still the sample ones.
+      const sample = await samplePrices(tx);
+      await tx.productUnit.updateMany({ where: { id: { in: sample.map((p) => p.unitId) } }, data: { price: 0, memberPrice: null } });
       // Asks the database for its one-time permission to empty the audit log (see the migration).
       await tx.$executeRawUnsafe("SELECT set_config('iwmpc.go_live_cleanup', 'on', true)");
       await tx.$executeRawUnsafe(`TRUNCATE ${CLEARED_TABLES.map((t) => `"${t}"`).join(', ')} RESTART IDENTITY`);
@@ -141,6 +175,7 @@ export async function runGoLive(input: GoLiveInput, adminId: number) {
         removedLogins: gone.map((u) => u.email),
         keptLogins: kept.map((u) => u.email),
         alsoRemovedOthers: others.length > 0,
+        clearedSamplePrices: sample.map((p) => `${p.name} (was ${p.price})`),
       });
       return { removed, removedLogins: gone.length, keptLogins: kept.length };
     },

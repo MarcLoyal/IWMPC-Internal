@@ -84,6 +84,7 @@ const FIELD_LABEL: Record<string, string> = {
   removedLogins: 'Removed logins',
   keptLogins: 'Kept logins',
   alsoRemovedOthers: 'Also removed records from other logins',
+  clearedSamplePrices: 'Sample prices set back to not set',
   workLabel: 'Work',
   requestedBy: 'Requested by',
   endsOn: 'Ends on',

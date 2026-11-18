@@ -11,6 +11,8 @@ interface Preview {
   confirmWords: string;
   remove: { key: string; label: string; count: number }[];
   users: { id: number; name: string; email: string; role: Role; status: string; demo: boolean }[];
+  samplePrices: { unitId: number; name: string; price: string }[];
+  fees: { label: string; value: string }[];
   notDemo: { user: { id: number; name: string; email: string }; accounts: number; readings: number; payments: number; invoices: number; sales: number; total: number }[];
 }
 
@@ -110,9 +112,40 @@ export function GoLive() {
               <li key={k}>{k}</li>
             ))}
           </ul>
-          <p className="mt-3 text-slate-600">Check the prices and settings afterwards: any sample values you have not changed stay as they are.</p>
+          {data.samplePrices.length > 0 ? (
+            <>
+              <p className="mt-4 font-semibold">These prices are still the sample ones. They go back to &quot;not set&quot;:</p>
+              <ul className="mt-1 list-disc pl-6">
+                {data.samplePrices.map((p) => (
+                  <li key={p.unitId}>
+                    {p.name} (now {p.price})
+                  </li>
+                ))}
+              </ul>
+              <p className="mt-1 text-slate-600">The Cashier cannot sell them until an Admin sets the real price.</p>
+            </>
+          ) : (
+            <p className="mt-3 text-slate-600">No sample prices are left: every price was set by an Admin.</p>
+          )}
         </Card>
       </div>
+
+      <Card className="mt-5 p-5">
+        <h2 className="text-xl font-bold">Check before you go live</h2>
+        <p className="mt-1 text-slate-600">These are kept as they are. Make sure they are the cooperative&apos;s real amounts, and change them in Settings if not.</p>
+        <dl className="mt-3 grid gap-x-8 gap-y-2 sm:grid-cols-2">
+          {data.fees.map((f) => (
+            <div key={f.label} className="flex justify-between gap-4 border-b border-slate-100 py-1 text-lg">
+              <dt>{f.label}</dt>
+              <dd className="font-semibold tabular-nums">{f.value}</dd>
+            </div>
+          ))}
+        </dl>
+        <p className="mt-4 text-slate-700">
+          <strong>Invoice numbers:</strong> numbers used while testing can be used again afterwards. If anyone tested with real invoices from the BIR booklet,
+          mark those paper invoices as cancelled in the booklet.
+        </p>
+      </Card>
 
       <Card className="mt-5 p-5">
         <h2 className="text-xl font-bold">Logins</h2>

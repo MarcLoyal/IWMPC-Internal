@@ -147,6 +147,33 @@ describe('go-live cleanup', () => {
     expect(left).not.toContain(dropped.email);
   });
 
+  it('sets sample prices back to not set, keeps real prices, and lists the fees to check', async () => {
+    await demoData();
+    const adminId = await userId('admin@test.local');
+    const product = await prisma.product.create({
+      data: { name: 'Dinorado', units: { create: [{ label: 'per sack', price: '1550.00', memberPrice: '1500.00' }, { label: 'per kilo', price: '62.00' }] } },
+      include: { units: { orderBy: { id: 'asc' } } },
+    });
+    const [sack, kilo] = product.units;
+    await prisma.priceChange.create({ data: { productUnitId: sack.id, oldPrice: 0, newPrice: '1550.00', reason: 'Sample price for the preview', changedById: adminId } });
+    // An Admin already set the real per-kilo price after the sample one.
+    await prisma.priceChange.create({ data: { productUnitId: kilo.id, oldPrice: 0, newPrice: '60.00', reason: 'Sample price for the preview', changedById: adminId } });
+    await prisma.priceChange.create({ data: { productUnitId: kilo.id, oldPrice: '60.00', newPrice: '62.00', reason: 'Board price list', changedById: adminId } });
+
+    const admin = await loginAs('ADMIN');
+    const preview = await admin.get('/api/go-live');
+    expect(preview.body.samplePrices).toEqual([{ unitId: sack.id, name: 'Dinorado, per sack', price: '₱1,550.00' }]);
+    expect(preview.body.fees.map((f: { label: string }) => f.label)).toEqual(['Membership fee', 'Installation fee', 'Reconnection fee', 'Late payment penalty']);
+
+    expect((await admin.post('/api/go-live').send({ confirm: 'GO LIVE' })).status).toBe(200);
+    const after = await prisma.productUnit.findMany({ orderBy: { id: 'asc' } });
+    expect(after[0].price.toFixed(2)).toBe('0.00');
+    expect(after[0].memberPrice).toBeNull();
+    expect(after[1].price.toFixed(2)).toBe('62.00');
+    const entry = await prisma.auditLog.findFirstOrThrow({ where: { action: 'system.go-live' } });
+    expect(entry.after).toMatchObject({ clearedSamplePrices: ['Dinorado, per sack (was ₱1,550.00)'] });
+  });
+
   it('is for Admins only', async () => {
     await demoData();
     const cashier = await loginEmail('cashier@iwmpc.test');
