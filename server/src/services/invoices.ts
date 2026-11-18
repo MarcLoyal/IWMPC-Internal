@@ -1,5 +1,5 @@
 import { Prisma, type PaymentType } from '@prisma/client';
-import { prisma, type Db } from '../lib/prisma';
+import { LONG_TX, prisma, type Db } from '../lib/prisma';
 import { AppError, notFound } from '../lib/errors';
 import { formatDate, fromDbDate, todayManila } from '../lib/dates';
 import { normalizeOr } from '../lib/orNumbers';
@@ -7,7 +7,7 @@ import { audit } from './audit';
 import { getSettings } from './settings';
 import { addPayment, type NewPayment } from './payments';
 import { WALK_IN, addSale, itemsSummary, priceItems, type SaleItemInput } from './sales';
-import { addLoanLines, loanInclude, splitFor } from './loans';
+import { addLoanLines, loanStateInclude, splitFor } from './loans';
 import type { PayoffRule, Split } from './loanMath';
 
 /*
@@ -198,7 +198,7 @@ export async function createInvoice(input: NewInvoice, userId: number) {
       const saved = saleId && input.credit ? await tx.invoice.update({ where: { id: invoice.id }, data: { saleId } }) : invoice;
       await audit(tx, userId, 'invoice.create', 'invoice', invoice.id, null, { ...saved, payments: payments.map((p) => p.id) });
       return { invoice: saved, payments, saleId };
-    });
+    }, LONG_TX);
   } catch (err) {
     // Two cashiers saving the same number at the same moment: the database's unique rule catches it.
     if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
@@ -422,7 +422,7 @@ export async function previewGuide(input: NewInvoice): Promise<Guide> {
   const rule = (await getSettings(prisma)).loan_payoff_rule as PayoffRule;
   for (const item of input.items) {
     if (item.type === 'LOAN') {
-      const loan = await prisma.loan.findUnique({ where: { id: item.loanId }, include: loanInclude });
+      const loan = await prisma.loan.findUnique({ where: { id: item.loanId }, include: loanStateInclude });
       if (!loan || loan.accountId !== input.accountId) throw new AppError(400, 'This loan was not found on this account.');
       addSplits(parts, splitFor(loan, item.amount, item.payoff, rule));
     } else if (item.type === 'WATER_BILL') {
@@ -477,7 +477,7 @@ async function addLoanPayment(
 ) {
   // Lock the loan so two cashiers cannot split the same installment at the same moment.
   await tx.$queryRaw`SELECT id FROM loans WHERE id = ${item.loanId} FOR UPDATE`;
-  const loan = await tx.loan.findUnique({ where: { id: item.loanId }, include: loanInclude });
+  const loan = await tx.loan.findUnique({ where: { id: item.loanId }, include: loanStateInclude });
   if (!loan || loan.accountId !== accountId) throw new AppError(400, 'This loan was not found on this account.');
   const rule = (await getSettings(tx)).loan_payoff_rule as PayoffRule;
   const splits = splitFor(loan, item.amount, item.payoff, rule, opts.paymentDate);

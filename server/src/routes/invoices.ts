@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { Prisma } from '@prisma/client';
 import { z } from 'zod';
-import { prisma } from '../lib/prisma';
+import { LONG_TX, prisma } from '../lib/prisma';
 import { AppError } from '../lib/errors';
 import { parseMoney } from '../lib/money';
 import { idParam } from '../lib/params';
@@ -119,7 +119,7 @@ invoicesRouter.post(
       .object({ reason: z.string({ required_error: 'Please type the reason for cancelling this invoice.' }).trim().min(1, 'Please type the reason for cancelling this invoice.').max(300) })
       .parse(req.body);
     const id = idParam(req.params.id, 'This invoice');
-    await prisma.$transaction((tx) => cancelInvoiceTx(tx, id, reason, req.user!.id));
+    await prisma.$transaction((tx) => cancelInvoiceTx(tx, id, reason, req.user!.id), LONG_TX);
     res.json({ guide: await invoiceGuide(id) });
   }),
 );

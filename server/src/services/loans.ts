@@ -1,5 +1,5 @@
 import { Prisma, type LoanStatus, type Role } from '@prisma/client';
-import { prisma, type Db } from '../lib/prisma';
+import { LONG_TX, prisma, type Db } from '../lib/prisma';
 import { AppError, notFound } from '../lib/errors';
 import { formatDate, fromDbDate, isDateString, toDbDate, todayManila } from '../lib/dates';
 import { formatPeso } from '../lib/money';
@@ -189,6 +189,12 @@ export const loanInclude = {
 
 export type FullLoan = Prisma.LoanGetPayload<{ include: typeof loanInclude }>;
 
+/** Just what is needed to work out what is paid and owed: lighter than loanInclude, for saving payments. */
+export const loanStateInclude = {
+  installments: loanInclude.installments,
+  paymentLines: loanInclude.paymentLines,
+} satisfies Prisma.LoanInclude;
+
 export async function applyForLoan(req: LoanRequest, user: { id: number; role: Role }) {
   return prisma.$transaction(async (tx) => {
     // One application at a time per member, so two cannot use the same limit.
@@ -235,7 +241,7 @@ export async function applyForLoan(req: LoanRequest, user: { id: number; role: R
       overLimitReason: loan.overLimitReason,
     });
     return loan;
-  });
+  }, LONG_TX);
 }
 
 async function lockLoan(tx: Prisma.TransactionClient, id: number) {
@@ -272,7 +278,7 @@ export async function approveLoan(id: number, user: { id: number; role: Role }) 
     const updated = await tx.loan.update({ where: { id }, data: { status: 'APPROVED', decidedAt: new Date(), decidedById: user.id } });
     await audit(tx, user.id, 'loan.approve', 'loan', id, { status: loan.status }, { status: updated.status, number: loan.number, principal: loan.principal });
     return updated;
-  });
+  }, LONG_TX);
 }
 
 export async function rejectLoan(id: number, reason: string, user: { id: number }) {
@@ -284,7 +290,7 @@ export async function rejectLoan(id: number, reason: string, user: { id: number 
     const updated = await tx.loan.update({ where: { id }, data: { status: 'REJECTED', decidedAt: new Date(), decidedById: user.id, rejectReason: reason.trim() } });
     await audit(tx, user.id, 'loan.reject', 'loan', id, { status: loan.status }, { status: updated.status, number: loan.number, rejectReason: updated.rejectReason });
     return updated;
-  });
+  }, LONG_TX);
 }
 
 /** The person who made it, or an Admin, may cancel a loan before the cash is released. */
@@ -297,7 +303,7 @@ export async function cancelLoan(id: number, reason: string, user: { id: number;
     const updated = await tx.loan.update({ where: { id }, data: { status: 'CANCELLED', cancelledAt: new Date(), cancelledById: user.id, cancelReason: reason.trim() } });
     await audit(tx, user.id, 'loan.cancel', 'loan', id, { status: loan.status }, { status: updated.status, number: loan.number, cancelReason: updated.cancelReason });
     return updated;
-  });
+  }, LONG_TX);
 }
 
 /** The Cashier gives the member the cash. The due dates count from the release date. */
@@ -333,7 +339,7 @@ export async function releaseLoan(id: number, input: { releaseDate: string; cash
       totalDeductions: loan.totalDeductions,
     });
     return updated;
-  });
+  }, LONG_TX);
 }
 
 // ---- A loan's state: what is paid, due and late --------------------------------------------------
@@ -499,7 +505,7 @@ export async function loanOwed(db: Db, accountId: number) {
 }
 
 /** How a payment of `amount` would be split (or the payoff, when `isPayoff`). Shown before saving too. */
-export function splitFor(loan: FullLoan, amount: D, isPayoff: boolean, rule: PayoffRule, today = todayManila()): Split[] {
+export function splitFor(loan: LoanForState & Pick<FullLoan, 'number' | 'status' | 'releaseDate'>, amount: D, isPayoff: boolean, rule: PayoffRule, today = todayManila()): Split[] {
   if (loan.status !== 'RELEASED') throw new AppError(400, `Loan ${loan.number} is ${STATUS_WORDS[loan.status]}, so it cannot be paid now.`);
   if (isPayoff) {
     const p = payoffOf(loan, rule, today);
@@ -528,7 +534,7 @@ export async function addLoanLines(tx: Prisma.TransactionClient, paymentId: numb
  * penalty decide.)
  */
 export async function refreshLoanPaid(tx: Prisma.TransactionClient, loanId: number, paidOn = todayManila()) {
-  const loan = await tx.loan.findUniqueOrThrow({ where: { id: loanId }, include: loanInclude });
+  const loan = await tx.loan.findUniqueOrThrow({ where: { id: loanId }, include: loanStateInclude });
   if (loan.status !== 'RELEASED' && loan.status !== 'PAID') return;
   const states = statesOf({ ...loan, paidOn: null }, paidOn);
   const done = sum(states.map(unpaid.principal)).isZero() && sum(states.map(unpaid.penalty)).isZero();
@@ -548,5 +554,5 @@ export async function setOpeningShareCapital(accountId: number, amount: D, reaso
     const after = await tx.account.update({ where: { id: accountId }, data: { openingShareCapital: cents(amount) } });
     await audit(tx, userId, 'share-capital.opening', 'account', accountId, { openingShareCapital: before.openingShareCapital }, { openingShareCapital: after.openingShareCapital, reason: reason.trim() });
     return after;
-  });
+  }, LONG_TX);
 }

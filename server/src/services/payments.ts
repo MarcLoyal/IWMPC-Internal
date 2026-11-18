@@ -1,5 +1,5 @@
 import { Prisma, type PaymentType } from '@prisma/client';
-import { prisma } from '../lib/prisma';
+import { LONG_TX, prisma } from '../lib/prisma';
 import { AppError, notFound } from '../lib/errors';
 import { formatDate, fromDbDate, toDbDate, todayManila } from '../lib/dates';
 import { audit } from './audit';
@@ -113,7 +113,7 @@ export async function voidPayment(paymentId: number, reason: string, userId: num
       return tx.payment.findUniqueOrThrow({ where: { id: paymentId } });
     }
     return voidOne(tx, payment.id, reason, userId);
-  });
+  }, LONG_TX);
 }
 
 /** Cancels an invoice: voids each of its payments (and a charge invoice's credit sale). */
