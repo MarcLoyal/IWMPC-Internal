@@ -8,6 +8,7 @@ const ICONS = {
     'M16 11a4 4 0 1 0-8 0 4 4 0 0 0 8 0ZM4 21a8 8 0 0 1 16 0',
   water: 'M12 3c3.500 4.300 6 7.400 6 10.500a6 6 0 0 1-12 0C6 10.400 8.500 7.300 12 3Z',
   cashier: 'M3 7h18v10H3V7Zm9 7.500a2.500 2.500 0 1 0 0-5 2.500 2.500 0 0 0 0 5ZM6 10v4m12-4v4',
+  loans: 'M4 20V10l8-6 8 6v10M9 20v-5h6v5M12 8.500v.010M8 20h8',
 };
 
 function Icon({ path }: { path: string }) {
@@ -33,6 +34,7 @@ export function Layout() {
     { to: '/accounts', name: 'Accounts', icon: ICONS.accounts },
     { to: '/water', name: 'Meter Readings', icon: ICONS.water },
     { to: '/cashier', name: 'Cashier', icon: ICONS.cashier },
+    { to: '/loans', name: 'Loans', icon: ICONS.loans },
   ];
   const footLink = 'font-semibold text-brand-100 underline-offset-2 hover:text-white hover:underline';
 
@@ -52,7 +54,6 @@ export function Layout() {
             </div>
           </div>
 
-          {/* Loans joins this menu in Phase 1C. */}
           <nav className="flex gap-1 overflow-x-auto px-3 pb-2 md:flex-col md:overflow-visible md:px-0 md:pb-0 md:pr-3" aria-label="Main menu">
             {items.map((item) => (
               <NavLink key={item.to} to={item.to} end={item.end} className={navClass} aria-label={item.name}>

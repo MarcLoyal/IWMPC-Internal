@@ -7,11 +7,13 @@ import { AccessDialog } from '../components/AccessDialog';
 import { useLoad } from '../lib/useLoad';
 import { Badge, Button, Card, Field, LinkButton, Loading, Modal, Notice, PageHeader } from '../components/ui';
 
-const ROLES: Role[] = ['ADMIN', 'CASHIER', 'STAFF', 'BOARD'];
+const ROLES: Role[] = ['ADMIN', 'CASHIER', 'STAFF', 'LOAN_OFFICER', 'BOARD'];
 
 export interface UserRow extends User {
   roleWork: Work[];
   canGetExtra: boolean;
+  /** Work this role can never be given (to keep duties apart). */
+  neverWork: Work[];
   grants: AccessGrant[];
 }
 
@@ -22,6 +24,8 @@ const SHORT_WORK: Record<Work, string> = {
   READINGS: 'Meter readings',
   ACCOUNTS: 'Accounts',
   PRINT: 'Printing bills',
+  LOANS: 'Loan applications',
+  APPROVE_LOANS: 'Approves loans',
 };
 
 export function Users() {
@@ -30,6 +34,8 @@ export function Users() {
   const [editing, setEditing] = useState<User | 'new' | null>(null);
   const [access, setAccess] = useState<number | null>(null);
   const accessUser = data?.users.find((u) => u.id === access) ?? null;
+  const [roleFilter, setRoleFilter] = useState<Role | ''>('');
+  const shown = data?.users.filter((u) => !roleFilter || u.role === roleFilter) ?? [];
 
   return (
     <>
@@ -41,6 +47,20 @@ export function Users() {
       </PageHeader>
       {error && <Notice tone="error">{error}</Notice>}
       {loading && !data && <Loading />}
+      {data && (
+        <div className="mb-4 max-w-xs">
+          <Field label="Show">
+            <select className="input" value={roleFilter} onChange={(e) => setRoleFilter(e.target.value as Role | '')}>
+              <option value="">All roles</option>
+              {ROLES.map((r) => (
+                <option key={r} value={r}>
+                  {ROLE[r]}
+                </option>
+              ))}
+            </select>
+          </Field>
+        </div>
+      )}
       {data && (
         <Card className="overflow-hidden">
           <div className="overflow-x-auto">
@@ -55,7 +75,7 @@ export function Users() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {data.users.map((u) => (
+                {shown.map((u) => (
                   <tr key={u.id} className={u.status === 'INACTIVE' ? 'text-slate-400' : ''}>
                     <td className="td font-semibold">
                       {u.name} {u.id === me?.id && <span className="font-normal text-slate-500">(you)</span>}

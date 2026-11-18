@@ -19,7 +19,8 @@ type Payload =
   | { type: 'INSTALLATION_FEE' | 'MEMBERSHIP_FEE' | 'SHARE_CAPITAL'; amount: string }
   | { type: 'OTHER'; amount: string; description: string }
   | { type: 'RICE_LPG'; saleId: number; amount: string }
-  | { type: 'SALE'; items: { unitId: number; quantity: string }[] };
+  | { type: 'SALE'; items: { unitId: number; quantity: string }[] }
+  | { type: 'LOAN'; loanId: number; amount: string; payoff: boolean };
 
 interface Item {
   key: string;
@@ -52,7 +53,7 @@ function StepTitle({ n, children }: { n: number; children: React.ReactNode }) {
   );
 }
 
-const owedKey = (o: OwedItem) => (o.waterBillId ? `bill-${o.waterBillId}` : o.saleId ? `sale-${o.saleId}` : `owed-${o.type}`);
+const owedKey = (o: OwedItem) => (o.loanId ? `loan-${o.loanId}` : o.waterBillId ? `bill-${o.waterBillId}` : o.saleId ? `sale-${o.saleId}` : `owed-${o.type}`);
 
 export function Cashier() {
   const { canDo } = useAuth();
@@ -199,6 +200,21 @@ export function Cashier() {
   }
 
   const unpaidWater = owed.filter((o) => o.type === 'WATER_BILL');
+
+  /** A loan payment: the server works out the split (penalty → interest → principal) to show on the line. */
+  async function addLoan(o: OwedItem, amt: string, payoff: boolean) {
+    setError('');
+    const clean = amt.replace(/[₱,\s]/g, '');
+    if (!AMOUNT.test(clean) || Number(clean) <= 0) return setError('Please enter a valid amount, for example 553.79.');
+    try {
+      const s = await api.get<{ penalty: string; interest: string; principal: string }>(`/loans/${o.loanId}/split?amount=${clean}&payoff=${payoff}`);
+      const parts = [Number(s.penalty) > 0 ? `penalty ${peso(s.penalty)}` : '', `interest ${peso(s.interest)}`, `principal ${peso(s.principal)}`].filter(Boolean).join(', ');
+      const what = o.label.split(' · ')[0];
+      addItem({ key: owedKey(o), label: `${what}${payoff ? ', paid off' : ''} (${parts})`, amount: Number(clean), payload: { type: 'LOAN', loanId: o.loanId!, amount: clean, payoff } });
+    } catch (err) {
+      setError(errorMessage(err));
+    }
+  }
 
   /** The small form under the payment type buttons. */
   function addTyped() {
@@ -426,6 +442,7 @@ export function Cashier() {
                     <ul className="space-y-2">
                       {owed.map((o) => {
                         const added = inInvoice.has(owedKey(o));
+                        if (o.type === 'LOAN') return <LoanOwedRow key={owedKey(o)} o={o} added={added} onAdd={(amt, payoff) => void addLoan(o, amt, payoff)} />;
                         return (
                           <li
                             key={owedKey(o)}
@@ -655,5 +672,55 @@ export function Cashier() {
         />
       )}
     </>
+  );
+}
+
+/** A loan under "What they owe": add what is due now, pay it off, or type another amount. */
+function LoanOwedRow({ o, added, onAdd }: { o: OwedItem; added: boolean; onAdd: (amount: string, payoff: boolean) => void }) {
+  const [other, setOther] = useState(false);
+  const [amount, setAmount] = useState('');
+  const late = o.status === 'OVERDUE';
+  return (
+    <li className={`rounded-lg border px-4 py-2.5 ${late ? 'border-red-300 bg-red-50' : 'border-amber-300 bg-amber-50'}`}>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <span className="font-semibold">
+          {o.label}
+          {late && <span className="ml-2 text-red-700">· Overdue</span>}
+          <span className="block text-sm font-normal text-slate-600">Left on the loan: {peso(o.balance ?? 0)}</span>
+        </span>
+        <span className="flex items-center gap-4">
+          <span className="text-right">
+            <span className="block text-xl font-bold tabular-nums">{peso(o.amount)}</span>
+            <span className="block text-sm text-slate-600">{late ? 'due now' : 'next installment'}</span>
+          </span>
+          {added ? (
+            <span className="w-[120px] text-center font-semibold text-emerald-700">✓ On invoice</span>
+          ) : (
+            <Button className="w-[120px]" onClick={() => onAdd(o.amount, false)} disabled={Number(o.amount) <= 0}>
+              Add
+            </Button>
+          )}
+        </span>
+      </div>
+      {!added && (
+        <div className="mt-2 flex flex-wrap items-center gap-x-5 gap-y-2">
+          <button type="button" className="font-semibold text-brand-700 underline" onClick={() => onAdd(o.payoffAmount ?? '0', true)}>
+            Pay off the loan: {peso(o.payoffAmount ?? 0)}
+          </button>
+          {!other ? (
+            <button type="button" className="font-semibold text-brand-700 underline" onClick={() => setOther(true)}>
+              Other amount
+            </button>
+          ) : (
+            <span className="flex flex-wrap items-center gap-2">
+              <input className="input w-40 tabular-nums" inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0.00" autoFocus aria-label="Other amount" />
+              <Button onClick={() => onAdd(amount, false)} disabled={!amount.trim()}>
+                Add this amount
+              </Button>
+            </span>
+          )}
+        </div>
+      )}
+    </li>
   );
 }

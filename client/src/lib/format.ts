@@ -49,6 +49,7 @@ export const PAYMENT_TYPE: Record<PaymentType, string> = {
   SHARE_CAPITAL: 'Share Capital',
   RICE_LPG: 'Rice & LPG',
   OTHER: 'Other',
+  LOAN: 'Loan Payment',
 };
 
 export const CONNECTION_STATUS: Record<ConnectionStatus, string> = {
@@ -81,6 +82,7 @@ export const ROLE: Record<Role, string> = {
   CASHIER: 'Cashier',
   STAFF: 'Staff / Encoder',
   BOARD: 'Board (view only)',
+  LOAN_OFFICER: 'Loan Officer',
 };
 
 export const ROLE_CAN: Record<Role, string> = {
@@ -88,4 +90,5 @@ export const ROLE_CAN: Record<Role, string> = {
   CASHIER: 'Record payments and view accounts',
   STAFF: 'Create and edit accounts and connections',
   BOARD: 'View only',
+  LOAN_OFFICER: 'Make loan applications, print schedules, view loans. Cannot approve, release or take payments',
 };

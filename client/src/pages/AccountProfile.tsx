@@ -9,9 +9,11 @@ import { BILL_STATUS, RATE_CLASS, periodLabel } from '../lib/water';
 import { CustomerCard } from '../components/CustomerCard';
 import { PurchasesTab } from '../components/PurchasesTab';
 import { PaymentDetails, PaymentStatusBadge } from '../components/PaymentDetails';
+import { LoanCard, LoansTab } from '../components/LoansTab';
+import type { MemberLoans } from '../lib/loans';
 import { Badge, Button, Card, Detail, Field, LinkButton, Loading, MemberBadge, Modal, Notice, PageHeader, PrintButton } from '../components/ui';
 
-type Tab = 'info' | 'water' | 'riceLpg' | 'transactions';
+type Tab = 'info' | 'water' | 'riceLpg' | 'loans' | 'transactions';
 
 const GRID = 'grid gap-x-8 gap-y-5 sm:grid-cols-2 lg:grid-cols-3 print:grid-cols-3';
 const WIDE = 'sm:col-span-2 lg:col-span-3 print:col-span-3';
@@ -31,6 +33,7 @@ export function AccountProfile() {
   const { can, canDo } = useAuth();
   const { data, error, loading, reload } = useLoad<Profile>(`/accounts/${id}`);
   const settings = useLoad<Settings>('/settings');
+  const loans = useLoad<MemberLoans>(`/loans/member/${id}`);
   const [tab, setTab] = useState<Tab>('info');
   const [dialog, setDialog] = useState<null | 'connection'>(null);
   const [statusChange, setStatusChange] = useState<Connection | null>(null);
@@ -141,6 +144,7 @@ export function AccountProfile() {
             </>
           )}
         </Card>
+        {loans.data && (loans.data.account.isMember || loans.data.loans.length > 0) && <LoanCard data={loans.data} />}
         <Card className="avoid-break p-5">
           <div className="text-sm font-semibold uppercase tracking-wide text-slate-500">Last Payment</div>
           {lastPayment ? (
@@ -181,14 +185,19 @@ export function AccountProfile() {
         </Card>
       </div>
 
-      {canEdit && (
+      {(canEdit || (canDo('LOANS') && account.isMember)) && (
         <div className="no-print mb-6 flex flex-wrap gap-3">
-          {data.canMakeMember && (
+          {canDo('LOANS') && account.isMember && (
+            <LinkButton to={`/loans/new?account=${account.id}`} variant="primary">
+              + New Loan
+            </LinkButton>
+          )}
+          {canEdit && data.canMakeMember && (
             <LinkButton to={`/accounts/${account.id}/make-member`} variant="success">
               Make a Member
             </LinkButton>
           )}
-          <Button onClick={() => setDialog('connection')}>+ Add Connection</Button>
+          {canEdit && <Button onClick={() => setDialog('connection')}>+ Add Connection</Button>}
         </div>
       )}
 
@@ -198,6 +207,7 @@ export function AccountProfile() {
             ['info', 'Personal Info'],
             ['water', `Water (${connections.length})`],
             ['riceLpg', `Rice & LPG (${purchases.length})`],
+            ['loans', `Loans (${loans.data?.loans.length ?? 0})`],
             ['transactions', `All Transactions (${payments.length})`],
           ] as [Tab, string][]
         ).map(([key, label]) => (
@@ -337,6 +347,12 @@ export function AccountProfile() {
       <section className={`${panel('riceLpg')} mb-6`}>
         <h2 className="mb-2 hidden text-lg font-bold print:block">Rice &amp; LPG</h2>
         <PurchasesTab purchases={purchases} />
+      </section>
+
+      <section className={`${panel('loans')} mb-6`}>
+        <h2 className="mb-2 hidden text-lg font-bold print:block">Loans</h2>
+        {loans.error && <Notice tone="error">{loans.error}</Notice>}
+        {loans.data && <LoansTab data={loans.data} onChanged={() => void loans.reload()} />}
       </section>
 
       <section className={panel('transactions')}>
