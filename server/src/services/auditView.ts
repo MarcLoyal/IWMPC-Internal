@@ -11,7 +11,7 @@ export const AUDIT_CATEGORIES = {
   accounts: { label: 'Accounts, connections and membership', prefixes: ['account.', 'connection.', 'membership.'] },
   users: { label: 'Users and passwords', prefixes: ['user.'] },
   access: { label: 'Logins and blocked attempts', prefixes: ['login', 'logout', 'access.', 'page.'] },
-  settings: { label: 'Settings, rates, prices and signatures', prefixes: ['settings.', 'area.', 'rates.', 'product', 'price.', 'signature.', 'system.'] },
+  settings: { label: 'Settings, rates, prices and signatures', prefixes: ['settings.', 'area.', 'rates.', 'product', 'price.', 'signature.'] },
 } as const;
 
 export type AuditCategory = keyof typeof AUDIT_CATEGORIES;
@@ -80,11 +80,6 @@ const FIELD_LABEL: Record<string, string> = {
   method: 'Rate method',
   count: 'Number of bills',
   path: 'Page or action',
-  removed: 'Removed',
-  removedLogins: 'Removed logins',
-  keptLogins: 'Kept logins',
-  alsoRemovedOthers: 'Also removed records from other logins',
-  clearedSamplePrices: 'Sample prices set back to not set',
   workLabel: 'Work',
   requestedBy: 'Requested by',
   endsOn: 'Ends on',
@@ -236,8 +231,6 @@ function summarize(entry: AuditLog, names: Names): string {
       if (entry.action === 'user.access-expire') return `Extra access ended on its end date: ${name} · ${work}`;
       return `Removed extra access from ${name}: ${work}`;
     }
-    case 'system.go-live':
-      return 'Go-live cleanup: removed the demo data and started this Audit Log';
     case 'login':
       return 'Logged in';
     case 'logout':

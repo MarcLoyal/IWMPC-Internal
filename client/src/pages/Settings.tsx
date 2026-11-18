@@ -233,7 +233,6 @@ export function Settings() {
         <LinkButton to="/prices">Rice &amp; LPG Prices</LinkButton>
         <LinkButton to="/settings/users">Users and Roles</LinkButton>
         <LinkButton to="/settings/audit">Audit Log</LinkButton>
-        <LinkButton to="/settings/go-live">Go-live cleanup</LinkButton>
       </PageHeader>
       {error && <Notice tone="error">{error}</Notice>}
       {loading && !data && <Loading />}

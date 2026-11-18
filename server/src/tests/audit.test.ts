@@ -17,6 +17,18 @@ describe('the audit log cannot be changed', () => {
     await expect(prisma.$executeRawUnsafe('DELETE FROM audit_log')).rejects.toThrow(/cannot be changed/);
     expect((await prisma.auditLog.findUniqueOrThrow({ where: { id: entry.id } })).action).toBe('login');
   });
+
+  it('refuses to empty the whole log, with no exception', async () => {
+    await loginAs('ADMIN');
+    await expect(prisma.$executeRawUnsafe('TRUNCATE audit_log')).rejects.toThrow(/cannot be emptied/);
+    await expect(
+      prisma.$transaction([
+        prisma.$executeRawUnsafe("SELECT set_config('iwmpc.go_live_cleanup', 'on', true)"),
+        prisma.$executeRawUnsafe('TRUNCATE audit_log'),
+      ]),
+    ).rejects.toThrow(/cannot be emptied/);
+    expect(await prisma.auditLog.count()).toBeGreaterThan(0);
+  });
 });
 
 describe('logins and blocked attempts are recorded', () => {
