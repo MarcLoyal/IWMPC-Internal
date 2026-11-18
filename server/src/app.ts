@@ -15,6 +15,7 @@ import { salesRouter } from './routes/sales';
 import { signaturesRouter } from './routes/signatures';
 import { invoicesRouter } from './routes/invoices';
 import { auditRouter } from './routes/audit';
+import { goLiveRouter } from './routes/goLive';
 
 export const app = express();
 
@@ -42,6 +43,7 @@ app.use('/api/sales', salesRouter);
 app.use('/api/signatures', signaturesRouter);
 app.use('/api/invoices', invoicesRouter);
 app.use('/api/audit', auditRouter);
+app.use('/api/go-live', goLiveRouter);
 
 app.use('/api', (_req, _res, next) => next(new AppError(404, 'This page was not found.')));
 app.use(errorHandler);

@@ -11,7 +11,7 @@ export const AUDIT_CATEGORIES = {
   accounts: { label: 'Accounts, connections and membership', prefixes: ['account.', 'connection.', 'membership.'] },
   users: { label: 'Users and passwords', prefixes: ['user.'] },
   access: { label: 'Logins and blocked attempts', prefixes: ['login', 'logout', 'access.', 'page.'] },
-  settings: { label: 'Settings, rates, prices and signatures', prefixes: ['settings.', 'area.', 'rates.', 'product', 'price.', 'signature.'] },
+  settings: { label: 'Settings, rates, prices and signatures', prefixes: ['settings.', 'area.', 'rates.', 'product', 'price.', 'signature.', 'system.'] },
 } as const;
 
 export type AuditCategory = keyof typeof AUDIT_CATEGORIES;
@@ -80,6 +80,10 @@ const FIELD_LABEL: Record<string, string> = {
   method: 'Rate method',
   count: 'Number of bills',
   path: 'Page or action',
+  removed: 'Removed',
+  removedLogins: 'Removed logins',
+  keptLogins: 'Kept logins',
+  alsoRemovedOthers: 'Also removed records from other logins',
   workLabel: 'Work',
   requestedBy: 'Requested by',
   endsOn: 'Ends on',
@@ -125,6 +129,12 @@ export function showValue(field: string, value: unknown): string {
     return WORDS[value] ?? value;
   }
   if (typeof value === 'number') return value.toLocaleString('en-US');
+  // Simple lists and name/number pairs read as plain text: "a, b" and "Accounts: 16, Payments: 40".
+  const plain = (v: unknown) => v === null || ['string', 'number', 'boolean'].includes(typeof v);
+  if (Array.isArray(value) && value.every(plain)) return value.length ? value.map((v) => showValue('', v)).join(', ') : '—';
+  if (isObject(value) && Object.values(value).every(plain)) {
+    return Object.entries(value).map(([k, v]) => `${k}: ${showValue(k, v)}`).join(', ') || '—';
+  }
   const text = JSON.stringify(value);
   return text.length > 300 ? `${text.slice(0, 297)}…` : text;
 }
@@ -225,6 +235,8 @@ function summarize(entry: AuditLog, names: Names): string {
       if (entry.action === 'user.access-expire') return `Extra access ended on its end date: ${name} · ${work}`;
       return `Removed extra access from ${name}: ${work}`;
     }
+    case 'system.go-live':
+      return 'Go-live cleanup: removed the demo data and started this Audit Log';
     case 'login':
       return 'Logged in';
     case 'logout':

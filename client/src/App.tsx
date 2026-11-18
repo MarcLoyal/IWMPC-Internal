@@ -15,6 +15,7 @@ import { Login } from './pages/Login';
 import { Settings } from './pages/Settings';
 import { Users } from './pages/Users';
 import { AuditLog } from './pages/AuditLog';
+import { GoLive } from './pages/GoLive';
 import { Profile } from './pages/Profile';
 import { Products } from './pages/Products';
 import { SalesReport } from './pages/SalesReport';
@@ -74,6 +75,7 @@ export function App() {
         <Route path="settings" element={<Only roles={['ADMIN']}><Settings /></Only>} />
         <Route path="settings/users" element={<Only roles={['ADMIN']}><Users /></Only>} />
         <Route path="settings/audit" element={<Only roles={['ADMIN']}><AuditLog /></Only>} />
+        <Route path="settings/go-live" element={<Only roles={['ADMIN']}><GoLive /></Only>} />
         <Route path="profile" element={<Profile />} />
         <Route path="login" element={<Navigate to="/" replace />} />
         <Route path="*" element={<NotFound />} />
