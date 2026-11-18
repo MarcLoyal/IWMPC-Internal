@@ -1,4 +1,6 @@
-import { Navigate, Route, Routes } from 'react-router-dom';
+import { useEffect } from 'react';
+import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
+import { api } from './lib/api';
 import { useAuth } from './lib/auth';
 import { Layout } from './components/Layout';
 import { LinkButton, Loading, Notice } from './components/ui';
@@ -12,6 +14,7 @@ import { Home } from './pages/Home';
 import { Login } from './pages/Login';
 import { Settings } from './pages/Settings';
 import { Users } from './pages/Users';
+import { AuditLog } from './pages/AuditLog';
 import { Profile } from './pages/Profile';
 import { Products } from './pages/Products';
 import { SalesReport } from './pages/SalesReport';
@@ -24,7 +27,13 @@ import type { Role } from './lib/types';
 
 function Only({ roles, children }: { roles: Role[]; children: JSX.Element }) {
   const { can } = useAuth();
-  return can(...roles) ? children : <Notice tone="warning">Your user account is not allowed to open this page.</Notice>;
+  const allowed = can(...roles);
+  const { pathname } = useLocation();
+  // Put the refused page on record in the Audit Log.
+  useEffect(() => {
+    if (!allowed) api.post('/audit/page-blocked', { path: pathname }).catch(() => undefined);
+  }, [allowed, pathname]);
+  return allowed ? children : <Notice tone="warning">Your user account is not allowed to open this page.</Notice>;
 }
 
 function NotFound() {
@@ -64,6 +73,7 @@ export function App() {
         <Route path="prices" element={<Products />} />
         <Route path="settings" element={<Only roles={['ADMIN']}><Settings /></Only>} />
         <Route path="settings/users" element={<Only roles={['ADMIN']}><Users /></Only>} />
+        <Route path="settings/audit" element={<Only roles={['ADMIN']}><AuditLog /></Only>} />
         <Route path="profile" element={<Profile />} />
         <Route path="login" element={<Navigate to="/" replace />} />
         <Route path="*" element={<NotFound />} />

@@ -4,7 +4,7 @@ import { useAuth } from '../lib/auth';
 import { ROLE, ROLE_CAN } from '../lib/format';
 import type { Role, User } from '../lib/types';
 import { useLoad } from '../lib/useLoad';
-import { Badge, Button, Card, Field, Loading, Modal, Notice, PageHeader } from '../components/ui';
+import { Badge, Button, Card, Field, LinkButton, Loading, Modal, Notice, PageHeader } from '../components/ui';
 
 const ROLES: Role[] = ['ADMIN', 'CASHIER', 'STAFF', 'BOARD'];
 
@@ -16,6 +16,7 @@ export function Users() {
   return (
     <>
       <PageHeader title="Users and Roles" back={{ to: '/settings', label: 'Back to Settings' }}>
+        <LinkButton to="/settings/audit?category=users">Changes to users</LinkButton>
         <Button variant="primary" onClick={() => setEditing('new')}>
           + New User
         </Button>
@@ -45,7 +46,10 @@ export function Users() {
                     <td className="td">{ROLE[u.role]}</td>
                     <td className="td">{u.status === 'ACTIVE' ? <Badge tone="green">Active</Badge> : <Badge tone="gray">Deactivated</Badge>}</td>
                     <td className="td text-right">
-                      <Button onClick={() => setEditing(u)}>Edit</Button>
+                      <div className="flex justify-end gap-2">
+                        <LinkButton to={`/settings/audit?userId=${u.id}`}>History</LinkButton>
+                        <Button onClick={() => setEditing(u)}>Edit</Button>
+                      </div>
                     </td>
                   </tr>
                 ))}

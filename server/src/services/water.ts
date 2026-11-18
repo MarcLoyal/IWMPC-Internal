@@ -166,7 +166,7 @@ export async function saveReadings(
         const newBill = await tx.waterBill.create({
           data: { ...bill, connectionId: connection.id, readingId: created.id, period },
         });
-        await audit(tx, userId, 'reading.create', 'water_bill', newBill.id, null, { ...reading, ...bill, period });
+        await audit(tx, userId, 'reading.create', 'water_bill', newBill.id, null, { ...reading, ...bill, period, connectionId: connection.id });
       }
       result.saved += 1;
     });

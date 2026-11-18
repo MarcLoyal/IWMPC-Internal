@@ -432,6 +432,8 @@ model AuditLog {
 
   @@index([entity, entityId])
   @@index([createdAt])
+  @@index([userId, createdAt])
+  // Append-only: a database trigger refuses any UPDATE or DELETE (see migration audit_log_append_only).
   @@map("audit_log")
 }
 

@@ -89,6 +89,7 @@ export function AccountProfile() {
         }
       >
         <PrintButton />
+        {can('ADMIN') && <LinkButton to={`/settings/audit?accountId=${account.id}`}>History</LinkButton>}
         {canEdit && <LinkButton to={`/accounts/${account.id}/edit`}>Edit</LinkButton>}
       </PageHeader>
 

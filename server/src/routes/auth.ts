@@ -4,7 +4,7 @@ import { z } from 'zod';
 import { prisma } from '../lib/prisma';
 import { AppError } from '../lib/errors';
 import { userJson } from '../lib/serialize';
-import { endSession, requireUser, startSession, wrap } from '../middleware/auth';
+import { endSession, requireUser, sessionUserId, startSession, wrap } from '../middleware/auth';
 import { audit } from '../services/audit';
 
 export const authRouter = Router();
@@ -24,6 +24,9 @@ authRouter.post(
     const user = await prisma.user.findUnique({ where: { email } });
     const ok = await bcrypt.compare(password, user?.passwordHash ?? DUMMY_HASH);
     if (!user || !ok || user.status !== 'ACTIVE') {
+      // Kept so an Admin can see wrong-password attempts. The password typed is never stored.
+      const why = !user ? 'unknown email' : !ok ? 'wrong password' : 'user is deactivated';
+      await audit(prisma, user?.id ?? null, 'login.failed', 'user', user?.id ?? null, null, { email: email.slice(0, 200), reason: why });
       throw new AppError(401, 'The email or password is not correct.');
     }
     startSession(res, user.id);
@@ -32,10 +35,17 @@ authRouter.post(
   }),
 );
 
-authRouter.post('/logout', (_req, res) => {
-  endSession(res);
-  res.json({ ok: true });
-});
+authRouter.post(
+  '/logout',
+  wrap(async (req, res) => {
+    const userId = sessionUserId(req);
+    endSession(res);
+    if (userId && (await prisma.user.findUnique({ where: { id: userId }, select: { id: true } }))) {
+      await audit(prisma, userId, 'logout', 'user', userId);
+    }
+    res.json({ ok: true });
+  }),
+);
 
 const passwordSchema = z.object({
   currentPassword: z.string({ required_error: 'Please type your current password.' }).min(1, 'Please type your current password.'),

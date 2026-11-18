@@ -232,6 +232,7 @@ export function Settings() {
         <LinkButton to="/settings/water-rates">Water Rates</LinkButton>
         <LinkButton to="/prices">Rice &amp; LPG Prices</LinkButton>
         <LinkButton to="/settings/users">Users and Roles</LinkButton>
+        <LinkButton to="/settings/audit">Audit Log</LinkButton>
       </PageHeader>
       {error && <Notice tone="error">{error}</Notice>}
       {loading && !data && <Loading />}
