@@ -34,6 +34,7 @@ interface Page {
 
 const TONE: Record<string, 'green' | 'yellow' | 'red' | 'gray' | 'blue'> = {
   money: 'green',
+  loans: 'blue',
   readings: 'blue',
   accounts: 'blue',
   users: 'yellow',
@@ -43,6 +44,7 @@ const TONE: Record<string, 'green' | 'yellow' | 'red' | 'gray' | 'blue'> = {
 
 const SHORT: Record<string, string> = {
   money: 'Money',
+  loans: 'Loans',
   readings: 'Readings',
   accounts: 'Accounts',
   users: 'Users',
@@ -52,7 +54,7 @@ const SHORT: Record<string, string> = {
 };
 
 // Entries that need a second look are marked in red.
-const WARN = new Set(['payment.void', 'invoice.cancel', 'sale.void', 'membership.revoke', 'login.failed', 'access.denied', 'page.blocked', 'reading.correct']);
+const WARN = new Set(['payment.void', 'invoice.cancel', 'sale.void', 'membership.revoke', 'login.failed', 'access.denied', 'page.blocked', 'reading.correct', 'loan.reject', 'loan.cancel']);
 
 const FILTERS = ['from', 'to', 'userId', 'category', 'accountId'] as const;
 

@@ -231,6 +231,7 @@ export function Settings() {
       <PageHeader title="Settings" subtitle="Only Admins can see and change these.">
         <LinkButton to="/settings/water-rates">Water Rates</LinkButton>
         <LinkButton to="/prices">Rice &amp; LPG Prices</LinkButton>
+        <LinkButton to="/settings/loans">Loans</LinkButton>
         <LinkButton to="/settings/users">Users and Roles</LinkButton>
         <LinkButton to="/settings/audit">Audit Log</LinkButton>
       </PageHeader>

@@ -1,7 +1,7 @@
 import { Prisma } from '@prisma/client';
 import { getSettings } from './settings';
 
-type Kind = 'account' | 'member';
+type Kind = 'account' | 'member' | 'loan';
 
 export function formatNumber(prefix: string, padding: number, n: number): string {
   return prefix + String(n).padStart(padding, '0');
@@ -25,7 +25,9 @@ export async function nextNumber(tx: Prisma.TransactionClient, kind: Kind): Prom
     const taken =
       kind === 'account'
         ? await tx.account.findUnique({ where: { accountNumber: candidate }, select: { id: true } })
-        : await tx.account.findUnique({ where: { memberNumber: candidate }, select: { id: true } });
+        : kind === 'loan'
+          ? await tx.loan.findUnique({ where: { number: candidate }, select: { id: true } })
+          : await tx.account.findUnique({ where: { memberNumber: candidate }, select: { id: true } });
     n += 1;
     if (!taken) {
       await tx.setting.upsert({

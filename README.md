@@ -4,14 +4,24 @@ Internal system for the Inicbulan Waterworks Multi-purpose Cooperative: accounts
 collections recorded with the Invoice No. from IWMPC's own BIR Service Invoice booklet, and (in later phases)
 water billing and loans.
 
-**Current phase: 1A + 1B + 2** — Accounts, Cashier, Home, Settings, Users, Water, and Rice & LPG sales.
+**Current phase: 1A + 1B + 1C + 2** — Accounts, Cashier, Home, Settings, Users, Water, Loans, and Rice & LPG sales.
 
 | Phase | Contents | Status |
 |---|---|---|
 | 1A | Accounts (member / non-member), basic connections, Cashier with Invoice Nos., Daily Collection Report, Home, Settings, Users | Built |
 | 1B | Water: rates, meter readings, bills, customer card, overdue list | Built |
-| 1C | Loans | Not started |
+| 1C | Loans: Loan Officer role, limit from share capital, loan types, approval and release, payments at the Cashier, schedules and disclosures | Built |
 | 2 | Rice & LPG sales at the Cashier, admin-only prices with history | Built |
+
+## What is in 1C (Loans)
+
+- **Roles and work.** New role **Loan Officer** (loan applications only). Two new kinds of work: *Loan applications* and *Approve loans*. The Admin gives "Approve loans" to the Manager's login through Extra access. A Loan Officer can never approve or work the Cashier, a Cashier can never approve, and nobody approves or releases a loan they made. All checked on the server.
+- **Can borrow up to** = loan limit % (Admin setting, default 70%, change needs a reason) × paid-up share capital − principal of the member's open loans. Paid-up share capital = the amount paid before the system (Admin, with a reason) + Share Capital payments. Members only. Above the limit only by an Admin with a reason.
+- **Loan types** (Settings → Loans): rate per month (3%), terms, service charge (1%), TSC (₱30 or a %), notarial fee, other charge, late penalty (default none). Every change needs a reason and is kept. A loan keeps the terms it was made with.
+- **Computation**: diminishing balance, equal monthly payments (P × r / (1 − (1 + r)^−n), to the centavo); the last installment takes the rounding so the balance ends at 0.00. Due dates fall on the release day each month, or the month's last day.
+- **Flow**: New Loan wizard → For approval → Approved → Released (Cashier records the cash) → Paid; or Rejected / Cancelled with a reason.
+- **Payments** at the Cashier under "What they owe": the next installment, pay off, or any amount. Split penalty → interest → principal, oldest installment first, shown as C / C1 / C2 on the invoice guide. Early payoff = principal left + this month's interest (setting).
+- **Lists and printouts**: Loans list, Due this week and Overdue by area for collectors, Schedule of Payment and Disclosure Statement. Home cards and a Loans tab on each member.
 
 ## What is in 1A
 

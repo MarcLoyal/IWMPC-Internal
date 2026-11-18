@@ -73,6 +73,14 @@ reportsRouter.get(
       }),
       getSettings(prisma),
     ]);
+    // Loans released today: cash paid OUT, so the cash count can be checked. The deductions kept
+    // from each loan are the cooperative's income.
+    const released = await prisma.loan.findMany({
+      where: { releaseDate: toDbDate(date), status: { in: ['RELEASED', 'PAID'] } },
+      include: { account: { select: { id: true, fullName: true, accountNumber: true } }, deductions: true, releasedBy: { select: { name: true } } },
+      orderBy: { id: 'asc' },
+    });
+    const loanLines = await prisma.loanPaymentLine.findMany({ where: { payment: { paymentDate: toDbDate(date), status: 'ACTIVE' } } });
 
     // Voided payments are listed but never counted.
     const active = payments.filter((p) => p.status === 'ACTIVE');
@@ -110,6 +118,25 @@ reportsRouter.get(
           amount: l.amount.toFixed(2),
         })),
         creditCollected: creditCollected.toFixed(2),
+      },
+      loans: {
+        released: released.map((l) => ({
+          id: l.id,
+          number: l.number,
+          account: l.account,
+          principal: l.principal.toFixed(2),
+          deductions: l.deductions.map((d) => ({ label: d.label, amount: d.amount.toFixed(2) })),
+          totalDeductions: l.totalDeductions.toFixed(2),
+          cashGiven: (l.cashGiven ?? l.netCash).toFixed(2),
+          releasedBy: l.releasedBy?.name ?? null,
+        })),
+        cashReleased: released.reduce((sum, l) => sum.plus(l.cashGiven ?? l.netCash), new Prisma.Decimal(0)).toFixed(2),
+        deductionsIncome: released.reduce((sum, l) => sum.plus(l.totalDeductions), new Prisma.Decimal(0)).toFixed(2),
+        collected: {
+          principal: loanLines.reduce((sum, x) => sum.plus(x.principal), new Prisma.Decimal(0)).toFixed(2),
+          interest: loanLines.reduce((sum, x) => sum.plus(x.interest), new Prisma.Decimal(0)).toFixed(2),
+          penalty: loanLines.reduce((sum, x) => sum.plus(x.penalty), new Prisma.Decimal(0)).toFixed(2),
+        },
       },
       coop: { name: settings.coop_name, address: settings.coop_address, cdaNo: settings.coop_cda_no },
       payments: payments.map(paymentJson),

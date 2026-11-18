@@ -2,6 +2,7 @@ import { Link } from 'react-router-dom';
 import { useAuth } from '../lib/auth';
 import { formatLongDate, peso } from '../lib/format';
 import type { HomeSummary } from '../lib/types';
+import type { LoanSummary } from '../lib/loans';
 import { useLoad } from '../lib/useLoad';
 import { Loading, Notice, PageHeader } from '../components/ui';
 
@@ -33,19 +34,11 @@ function SummaryCard({
   );
 }
 
-function ComingCard({ label, phase }: { label: string; phase: string }) {
-  return (
-    <div className="flex flex-col rounded-xl border border-dashed border-slate-300 bg-slate-50 p-6">
-      <div className="text-sm font-semibold uppercase tracking-wide text-slate-500">{label}</div>
-      <div className="mt-2 text-2xl font-bold text-slate-400">Coming soon</div>
-      <div className="mt-2 text-slate-500">This will be added in {phase}.</div>
-    </div>
-  );
-}
-
 export function Home() {
   const { user, canDo } = useAuth();
   const { data, error, loading } = useLoad<HomeSummary>('/reports/home');
+  const loans = useLoad<LoanSummary>('/loans/summary').data;
+  const n = (count: number, one: string, many: string) => (count === 1 ? `1 ${one}` : `${count.toLocaleString('en-US')} ${many}`);
 
   return (
     <>
@@ -96,8 +89,48 @@ export function Home() {
             }
             action="Open Overdue List"
           />
-          <ComingCard label="Loans Due This Week" phase="the Loans phase" />
         </div>
+      )}
+      {data && loans && (
+        <>
+          <h2 className="mb-3 mt-8 text-xl font-bold">Loans</h2>
+          <div className="grid gap-5 sm:grid-cols-2">
+            <SummaryCard to="/loans" label="Active Loans" value={peso(loans.active.balance)} detail={`${n(loans.active.count, 'loan', 'loans')} · balance`} action="Open Loans" />
+            <SummaryCard
+              to="/loans?view=week"
+              label="Loans Due This Week"
+              value={peso(loans.dueThisWeek.amount)}
+              detail={loans.dueThisWeek.count === 0 ? 'Nothing due in the next 7 days' : `${n(loans.dueThisWeek.count, 'loan', 'loans')} due in the next 7 days`}
+              action="Open Due This Week"
+            />
+            <SummaryCard
+              to="/loans?view=overdue"
+              label="Overdue Loans"
+              value={peso(loans.overdue.amount)}
+              tone={loans.overdue.count > 0 ? 'red' : 'green'}
+              detail={loans.overdue.count === 0 ? 'No overdue loans' : `${n(loans.overdue.count, 'loan is', 'loans are')} overdue`}
+              action="Open Overdue Loans"
+            />
+            {loans.forApproval !== null && (
+              <SummaryCard
+                to="/loans?view=approval"
+                label="Loans for Approval"
+                value={loans.forApproval.toLocaleString('en-US')}
+                detail={loans.forApproval === 0 ? 'Nothing waiting' : `${n(loans.forApproval, 'loan is', 'loans are')} waiting for you`}
+                action="Open Loans for Approval"
+              />
+            )}
+            {loans.readyToRelease !== null && loans.readyToRelease > 0 && (
+              <SummaryCard
+                to="/loans?view=release"
+                label="Ready to Release"
+                value={loans.readyToRelease.toLocaleString('en-US')}
+                detail={`${n(loans.readyToRelease, 'approved loan', 'approved loans')} waiting for the cash`}
+                action="Open Ready to Release"
+              />
+            )}
+          </div>
+        </>
       )}
     </>
   );

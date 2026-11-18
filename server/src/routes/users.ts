@@ -9,9 +9,11 @@ import { allow, wrap } from '../middleware/auth';
 import { audit } from '../services/audit';
 import { closeEndedGrants, grantAudit, grantJson, grantPeople } from '../services/access';
 import { isDateString, todayManila, toDbDate } from '../lib/dates';
-import { CAN_GET_EXTRA, ROLE_WORK, WORK, WORK_KEYS, type Work } from '../lib/work';
+import { CAN_GET_EXTRA, NEVER_FOR, ROLE_WORK, WORK, WORK_KEYS, canBeGiven, type Work } from '../lib/work';
 
 export const usersRouter = Router();
+
+const ROLE_NAME: Record<string, string> = { ADMIN: 'Admin', CASHIER: 'Cashier', STAFF: 'Staff / Encoder', BOARD: 'Board', LOAN_OFFICER: 'Loan Officer' };
 usersRouter.use(allow('ADMIN'));
 
 const name = z.string({ required_error: 'Please type the name.' }).trim().min(1, 'Please type the name.').max(120);
@@ -24,7 +26,7 @@ const password = z
   .string({ required_error: 'Please type a password.' })
   .min(8, 'The password must be at least 8 characters long.')
   .max(100);
-const role = z.enum(['ADMIN', 'CASHIER', 'STAFF', 'BOARD'], { errorMap: () => ({ message: 'Please choose a role.' }) });
+const role = z.enum(['ADMIN', 'CASHIER', 'STAFF', 'BOARD', 'LOAN_OFFICER'], { errorMap: () => ({ message: 'Please choose a role.' }) });
 
 usersRouter.get(
   '/',
@@ -39,6 +41,7 @@ usersRouter.get(
         ...userJson(u),
         roleWork: ROLE_WORK[u.role],
         canGetExtra: CAN_GET_EXTRA.includes(u.role),
+        neverWork: NEVER_FOR[u.role] ?? [],
         grants: u.accessGrants.map(grantJson),
       })),
       work: WORK_KEYS.map((key) => ({ key, label: WORK[key] })),
@@ -89,11 +92,12 @@ usersRouter.put(
     });
     await audit(prisma, req.user!.id, data.password ? 'user.update+password' : 'user.update', 'user', id, userJson(before), userJson(user));
 
-    // An Admin already has everything and Board stays view only, so open extra access ends here.
-    if (!CAN_GET_EXTRA.includes(user.role)) {
+    // Open extra access the new role cannot have ends here: an Admin already has everything, Board
+    // stays view only, and some work is never given to some roles (see NEVER_FOR).
+    {
       const open = await prisma.accessGrant.findMany({ where: { userId: id, removedAt: null } });
-      for (const grant of open) {
-        const why = `Role changed to ${user.role === 'ADMIN' ? 'Admin' : 'Board'}`;
+      for (const grant of open.filter((g) => !canBeGiven(user.role, g.work as Work))) {
+        const why = `Role changed to ${ROLE_NAME[user.role]}`;
         await prisma.$transaction(async (tx) => {
           await tx.accessGrant.update({ where: { id: grant.id }, data: { removedAt: new Date(), removedById: req.user!.id, removeReason: why } });
           await audit(tx, req.user!.id, 'user.access-remove', 'user', id, grantAudit(grant), { ...grantAudit(grant), removeReason: why });
@@ -132,6 +136,9 @@ usersRouter.post(
     if (user.role === 'ADMIN') throw new AppError(400, 'Admins can already do everything.');
     if (!CAN_GET_EXTRA.includes(user.role)) throw new AppError(400, 'Board members are view only and cannot be given extra access.');
     if (ROLE_WORK[user.role].includes(data.work)) throw new AppError(400, 'This work is already part of their role.');
+    if (!canBeGiven(user.role, data.work)) {
+      throw new AppError(400, `A ${ROLE_NAME[user.role]} cannot be given this work, to keep duties apart.`);
+    }
     if (data.endsOn && data.endsOn < todayManila()) throw new AppError(400, 'The end date cannot be in the past.');
 
     await closeEndedGrants({ userId: id });

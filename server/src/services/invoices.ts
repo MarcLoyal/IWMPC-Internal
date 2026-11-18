@@ -1,5 +1,5 @@
 import { Prisma, type PaymentType } from '@prisma/client';
-import { prisma, type Db } from '../lib/prisma';
+import { LONG_TX, prisma, type Db } from '../lib/prisma';
 import { AppError, notFound } from '../lib/errors';
 import { formatDate, fromDbDate, todayManila } from '../lib/dates';
 import { normalizeOr } from '../lib/orNumbers';
@@ -7,6 +7,8 @@ import { audit } from './audit';
 import { getSettings } from './settings';
 import { addPayment, type NewPayment } from './payments';
 import { WALK_IN, addSale, itemsSummary, priceItems, type SaleItemInput } from './sales';
+import { addLoanLines, loanStateInclude, splitFor } from './loans';
+import type { PayoffRule, Split } from './loanMath';
 
 /*
  * BIR Service Invoices. IWMPC writes invoices by hand from a bound booklet; the system never prints
@@ -21,7 +23,9 @@ export type InvoiceItem =
   /** A payment toward an earlier Rice & LPG credit sale. */
   | { type: 'RICE_LPG'; saleId: number; amount: Prisma.Decimal }
   /** A new Rice & LPG sale. */
-  | { type: 'SALE'; items: SaleItemInput[] };
+  | { type: 'SALE'; items: SaleItemInput[] }
+  /** A loan payment: any amount, or the whole payoff. Split penalty → interest → principal. */
+  | { type: 'LOAN'; loanId: number; amount: Prisma.Decimal; payoff: boolean };
 
 export interface NewInvoice {
   /** Empty for a walk-in customer (Rice & LPG only). */
@@ -115,6 +119,8 @@ function check(input: NewInvoice) {
   }
   const bills = input.items.flatMap((i) => (i.type === 'WATER_BILL' && i.waterBillId ? [i.waterBillId] : []));
   if (new Set(bills).size !== bills.length) throw new AppError(400, 'The same water bill is on this invoice twice. Please remove one.');
+  const loans = input.items.flatMap((i) => (i.type === 'LOAN' ? [i.loanId] : []));
+  if (new Set(loans).size !== loans.length) throw new AppError(400, 'The same loan is on this invoice twice. Please put it on once.');
   if (input.credit && (input.items.length !== 1 || input.items[0].type !== 'SALE')) {
     throw new AppError(400, 'A credit sale must be on its own invoice.');
   }
@@ -154,6 +160,10 @@ export async function createInvoice(input: NewInvoice, userId: number) {
         n += 1;
         // The first payment keeps the invoice number itself; the others get number#2, number#3...
         const orKey = n === 1 ? number : `${number}#${n}`;
+        if (item.type === 'LOAN') {
+          payments.push(await addLoanPayment(tx, item, input.accountId!, userId, { orKey, invoiceId: invoice.id, paymentDate: date }));
+          continue;
+        }
         if (item.type === 'SALE') {
           const sale = await addSale(tx, { accountId: input.accountId, walkInName: input.walkInName, items: item.items, credit: !!input.credit, saleDate: date }, userId);
           saleId = sale.id;
@@ -188,7 +198,7 @@ export async function createInvoice(input: NewInvoice, userId: number) {
       const saved = saleId && input.credit ? await tx.invoice.update({ where: { id: invoice.id }, data: { saleId } }) : invoice;
       await audit(tx, userId, 'invoice.create', 'invoice', invoice.id, null, { ...saved, payments: payments.map((p) => p.id) });
       return { invoice: saved, payments, saleId };
-    });
+    }, LONG_TX);
   } catch (err) {
     // Two cashiers saving the same number at the same moment: the database's unique rule catches it.
     if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
@@ -276,6 +286,7 @@ interface WaterPart {
 }
 
 interface Parts {
+  loan: { principal: Prisma.Decimal; interest: Prisma.Decimal; penalty: Prisma.Decimal };
   water: WaterPart[];
   installation: Prisma.Decimal;
   store: { amount: Prisma.Decimal; items: string[] };
@@ -301,7 +312,8 @@ function guideFrom(
   }
   const sorted = [...parts.water].sort((a, b) => a.bill.period.localeCompare(b.bill.period));
   const others = parts.others.reduce((sum, o) => sum.plus(o.amount), zero());
-  const total = water.plus(penalty).plus(parts.installation).plus(parts.store.amount).plus(others);
+  const loanTotal = parts.loan.principal.plus(parts.loan.interest).plus(parts.loan.penalty);
+  const total = water.plus(penalty).plus(parts.installation).plus(parts.store.amount).plus(loanTotal).plus(others);
   const money = (d: Prisma.Decimal) => (d.gt(0) ? d.toFixed(2) : null);
   const meters = [...new Set(sorted.map((w) => [w.bill.connection.meterName, w.bill.connection.meterSerial && `# ${w.bill.connection.meterSerial}`].filter(Boolean).join(' ')))].filter(Boolean);
   const monthName = (p: string) => new Date(`${p}-01T00:00:00Z`).toLocaleDateString('en-US', { timeZone: 'UTC', month: 'short', year: '2-digit' }).replace(' ', " '");
@@ -342,9 +354,9 @@ function guideFrom(
     penalty: money(penalty),
     connection: money(parts.installation),
     store: parts.store.amount.gt(0) ? { amount: parts.store.amount.toFixed(2), items: parts.store.items } : null,
-    loans: null as string | null,
-    loanInterest: null as string | null,
-    loanPenalty: null as string | null,
+    loans: money(parts.loan.principal),
+    loanInterest: money(parts.loan.interest),
+    loanPenalty: money(parts.loan.penalty),
     others: parts.others.map((o) => ({ label: o.label, amount: o.amount.toFixed(2) })),
     othersTotal: money(others),
     totalSales: total.toFixed(2),
@@ -369,14 +381,15 @@ export async function invoiceGuide(invoiceId: number): Promise<Guide> {
   const invoice = await prisma.invoice.findUnique({
     where: { id: invoiceId },
     include: {
-      payments: { orderBy: { id: 'asc' }, include: { waterBill: { include: { reading: true, connection: true, payments: true } }, sale: { include: { items: true } } } },
+      payments: { orderBy: { id: 'asc' }, include: { waterBill: { include: { reading: true, connection: true, payments: true } }, sale: { include: { items: true } }, loanLines: true } },
       sale: { include: { items: true } },
     },
   });
   if (!invoice) throw notFound('This invoice');
-  const parts: Parts = { water: [], installation: zero(), store: { amount: zero(), items: [] }, others: [] };
+  const parts: Parts = emptyParts();
   for (const p of invoice.payments) {
-    if (p.type === 'WATER_BILL' && p.waterBill) {
+    if (p.type === 'LOAN') addSplits(parts, p.loanLines);
+    else if (p.type === 'WATER_BILL' && p.waterBill) {
       // Paid on this bill before this invoice (not counting payments voided since).
       const paidBefore = p.waterBill.payments.filter((x) => x.id < p.id && x.status === 'ACTIVE').reduce((s, x) => s.plus(x.amount), zero());
       parts.water.push({ bill: p.waterBill, paidBefore, amount: p.amount });
@@ -405,9 +418,14 @@ export async function previewGuide(input: NewInvoice): Promise<Guide> {
   check(input);
   const account = input.accountId ? await prisma.account.findUnique({ where: { id: input.accountId } }) : null;
   if (input.accountId && !account) throw notFound('This account');
-  const parts: Parts = { water: [], installation: zero(), store: { amount: zero(), items: [] }, others: [] };
+  const parts: Parts = emptyParts();
+  const rule = (await getSettings(prisma)).loan_payoff_rule as PayoffRule;
   for (const item of input.items) {
-    if (item.type === 'WATER_BILL') {
+    if (item.type === 'LOAN') {
+      const loan = await prisma.loan.findUnique({ where: { id: item.loanId }, include: loanStateInclude });
+      if (!loan || loan.accountId !== input.accountId) throw new AppError(400, 'This loan was not found on this account.');
+      addSplits(parts, splitFor(loan, item.amount, item.payoff, rule));
+    } else if (item.type === 'WATER_BILL') {
       const bill = item.waterBillId
         ? await prisma.waterBill.findUnique({ where: { id: item.waterBillId }, include: { reading: true, connection: true, payments: true } })
         : null;
@@ -432,4 +450,59 @@ export async function previewGuide(input: NewInvoice): Promise<Guide> {
     await buyerOf(input.accountId, input.walkInName),
     await getSettings(prisma),
   );
+}
+
+// ---- Loans on an invoice ------------------------------------------------------------------------
+
+function emptyParts(): Parts {
+  return { loan: { principal: zero(), interest: zero(), penalty: zero() }, water: [], installation: zero(), store: { amount: zero(), items: [] }, others: [] };
+}
+
+/** C. Loans Receivable (principal), C1. Interest, C2. Penalty/Surcharge. */
+function addSplits(parts: Parts, splits: Pick<Split, 'principal' | 'interest' | 'penalty'>[]) {
+  for (const s of splits) {
+    parts.loan.principal = parts.loan.principal.plus(s.principal);
+    parts.loan.interest = parts.loan.interest.plus(s.interest);
+    parts.loan.penalty = parts.loan.penalty.plus(s.penalty);
+  }
+}
+
+/** One loan payment inside the invoice's transaction: the payment, then how it was split. */
+async function addLoanPayment(
+  tx: Prisma.TransactionClient,
+  item: { loanId: number; amount: Prisma.Decimal; payoff: boolean },
+  accountId: number,
+  userId: number,
+  opts: { orKey: string; invoiceId: number; paymentDate: string },
+) {
+  // Lock the loan so two cashiers cannot split the same installment at the same moment.
+  await tx.$queryRaw`SELECT id FROM loans WHERE id = ${item.loanId} FOR UPDATE`;
+  const loan = await tx.loan.findUnique({ where: { id: item.loanId }, include: loanStateInclude });
+  if (!loan || loan.accountId !== accountId) throw new AppError(400, 'This loan was not found on this account.');
+  const rule = (await getSettings(tx)).loan_payoff_rule as PayoffRule;
+  const splits = splitFor(loan, item.amount, item.payoff, rule, opts.paymentDate);
+  const amount = splits.reduce((s, x) => s.plus(x.penalty).plus(x.interest).plus(x.principal), zero());
+  const payment = await tx.payment.create({
+    data: {
+      accountId,
+      type: 'LOAN',
+      amount,
+      orNumber: opts.orKey,
+      invoiceId: opts.invoiceId,
+      paymentDate: new Date(`${opts.paymentDate}T00:00:00Z`),
+      loanId: loan.id,
+      description: `Loan ${loan.number}${item.payoff ? ', paid off' : ''}`,
+      createdById: userId,
+    },
+  });
+  await audit(tx, userId, 'payment.create', 'payment', payment.id, null, {
+    ...payment,
+    split: {
+      penalty: splits.reduce((s, x) => s.plus(x.penalty), zero()),
+      interest: splits.reduce((s, x) => s.plus(x.interest), zero()),
+      principal: splits.reduce((s, x) => s.plus(x.principal), zero()),
+    },
+  });
+  await addLoanLines(tx, payment.id, loan.id, splits, opts.paymentDate);
+  return payment;
 }

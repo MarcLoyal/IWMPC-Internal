@@ -150,6 +150,6 @@ describe('role changes and history', () => {
     const cashier = res.body.users.find((u: { id: number }) => u.id === cashierId);
     expect(cashier).toMatchObject({ roleWork: ['CASHIER', 'PRINT'], canGetExtra: true });
     expect(cashier.grants).toHaveLength(1);
-    expect(res.body.work.map((w: { key: string }) => w.key)).toEqual(['CASHIER', 'READINGS', 'ACCOUNTS', 'PRINT']);
+    expect(res.body.work.map((w: { key: string }) => w.key)).toEqual(['CASHIER', 'READINGS', 'ACCOUNTS', 'PRINT', 'LOANS', 'APPROVE_LOANS']);
   });
 });

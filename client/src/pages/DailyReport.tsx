@@ -126,6 +126,55 @@ export function DailyReport() {
             </Card>
           )}
 
+          {(data.loans.released.length > 0 || Number(data.loans.collected.principal) + Number(data.loans.collected.interest) + Number(data.loans.collected.penalty) > 0) && (
+            <Card className="avoid-break mb-5">
+              <div className="border-b border-slate-200 px-4 py-2 font-bold">Loans</div>
+              <div className="grid gap-4 p-4 sm:grid-cols-2">
+                <div>
+                  <div className="font-semibold">Collected today (in the payments below)</div>
+                  <div className="tabular-nums">
+                    Principal {peso(data.loans.collected.principal)} · Interest {peso(data.loans.collected.interest)}
+                    {Number(data.loans.collected.penalty) > 0 && ` · Penalty ${peso(data.loans.collected.penalty)}`}
+                  </div>
+                </div>
+                <div>
+                  <div className="font-semibold">Cash given out for loans today</div>
+                  <div className="text-2xl font-bold tabular-nums text-red-700">− {peso(data.loans.cashReleased)}</div>
+                  {Number(data.loans.deductionsIncome) > 0 && <div className="text-slate-600">Deductions kept (income): {peso(data.loans.deductionsIncome)}</div>}
+                </div>
+              </div>
+              {data.loans.released.length > 0 && (
+                <table className="w-full">
+                  <thead className="border-y border-slate-200 bg-slate-50">
+                    <tr>
+                      <th className="th">Loan released</th>
+                      <th className="th text-right">Loan</th>
+                      <th className="th text-right">Deductions</th>
+                      <th className="th text-right">Cash given</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {data.loans.released.map((l) => (
+                      <tr key={l.id}>
+                        <td className="td py-2">
+                          <span className="font-semibold">{l.account.fullName}</span> · {l.number}
+                          {l.releasedBy && <span className="text-slate-500"> · by {l.releasedBy}</span>}
+                        </td>
+                        <td className="td py-2 text-right tabular-nums">{peso(l.principal)}</td>
+                        <td className="td py-2 text-right tabular-nums">{peso(l.totalDeductions)}</td>
+                        <td className="td py-2 text-right font-semibold tabular-nums">{peso(l.cashGiven)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+              <div className="flex justify-between border-t border-slate-200 px-4 py-2 text-lg">
+                <span className="font-semibold">Collections less cash given for loans</span>
+                <span className="font-bold tabular-nums">{peso(Number(data.grandTotal) - Number(data.loans.cashReleased))}</span>
+              </div>
+            </Card>
+          )}
+
           <Card className="overflow-hidden">
             {data.payments.length === 0 ? (
               <p className="px-6 py-12 text-center text-slate-500">No payments were recorded on this day.</p>

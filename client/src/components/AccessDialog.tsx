@@ -12,7 +12,8 @@ const today = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Manila' }
 export function AccessDialog({ user, work, onClose, onChanged }: { user: UserRow; work: WorkList; onClose: () => void; onChanged: () => void }) {
   const open = user.grants.filter((g) => !g.removedAt);
   const past = user.grants.filter((g) => g.removedAt);
-  const extra = work.filter((w) => !user.roleWork.includes(w.key));
+  const extra = work.filter((w) => !user.roleWork.includes(w.key) && !user.neverWork.includes(w.key));
+  const never = work.filter((w) => user.neverWork.includes(w.key));
   const included = work.filter((w) => user.roleWork.includes(w.key));
   const [showPast, setShowPast] = useState(false);
 
@@ -25,6 +26,12 @@ export function AccessDialog({ user, work, onClose, onChanged }: { user: UserRow
         Turn on extra work only when someone asks for it. Each change takes effect at once and is kept in the Audit Log. Voiding, cancelling, prices,
         rates, settings and users stay Admin-only.
       </p>
+
+      {never.length > 0 && (
+        <p className="mt-2 text-slate-600">
+          To keep duties apart, a {ROLE[user.role]} can never be given: {never.map((w) => w.label).join('; ')}.
+        </p>
+      )}
 
       <div className="mt-5 space-y-3">
         {extra.map((w) => (

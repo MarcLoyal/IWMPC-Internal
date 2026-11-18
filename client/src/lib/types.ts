@@ -1,7 +1,7 @@
-export type Role = 'ADMIN' | 'CASHIER' | 'STAFF' | 'BOARD';
+export type Role = 'ADMIN' | 'CASHIER' | 'STAFF' | 'BOARD' | 'LOAN_OFFICER';
 
 /** Work a role includes, or that an Admin can give a user as extra access. */
-export type Work = 'CASHIER' | 'READINGS' | 'ACCOUNTS' | 'PRINT';
+export type Work = 'CASHIER' | 'READINGS' | 'ACCOUNTS' | 'PRINT' | 'LOANS' | 'APPROVE_LOANS';
 
 export interface AccessGrant {
   id: number;
@@ -16,7 +16,7 @@ export interface AccessGrant {
   removedBy: string | null;
   removeReason: string | null;
 }
-export type PaymentType = 'WATER_BILL' | 'INSTALLATION_FEE' | 'MEMBERSHIP_FEE' | 'SHARE_CAPITAL' | 'RICE_LPG' | 'OTHER';
+export type PaymentType = 'WATER_BILL' | 'INSTALLATION_FEE' | 'MEMBERSHIP_FEE' | 'SHARE_CAPITAL' | 'RICE_LPG' | 'OTHER' | 'LOAN';
 export type BillStatus = 'PAID' | 'UNPAID' | 'DUE_SOON' | 'OVERDUE';
 export type RateClass = 'RESIDENTIAL' | 'COMMERCIAL';
 
@@ -227,7 +227,11 @@ export interface OwedItem {
   amount: string;
   waterBillId?: number;
   saleId?: number;
-  status?: BillStatus;
+  status?: BillStatus | 'UP_TO_DATE' | 'NOT_RELEASED';
+  /** Loans: the loan, the amount to pay it off today, and everything left on it. */
+  loanId?: number;
+  payoffAmount?: string;
+  balance?: string;
 }
 
 export interface AccountProfile {
@@ -256,6 +260,8 @@ export interface AccountList {
 }
 
 export interface Settings {
+  loan_limit_percent: string;
+  loan_payoff_rule: 'THIS_MONTH' | 'TO_DATE';
   coop_name: string;
   coop_address: string;
   coop_cda_no: string;
@@ -328,5 +334,11 @@ export interface DailyReport {
   count: number;
   voidedCount: number;
   riceLpg: { lines: { product: string; unit: string; quantity: string; amount: string }[]; creditCollected: string };
+  loans: {
+    released: { id: number; number: string; account: { id: number; fullName: string; accountNumber: string }; principal: string; deductions: { label: string; amount: string }[]; totalDeductions: string; cashGiven: string; releasedBy: string | null }[];
+    cashReleased: string;
+    deductionsIncome: string;
+    collected: { principal: string; interest: string; penalty: string };
+  };
   orGaps: { after: string; before: string; missing: string[]; missingCount: number }[];
 }

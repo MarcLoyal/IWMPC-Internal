@@ -61,6 +61,15 @@ export const SETTING_DEFAULTS = {
   member_no_prefix: '',
   member_no_padding: '4',
   member_no_next: '1',
+  // Loans. A member can borrow up to loan_limit_percent of their paid-up share capital, less the
+  // principal still unpaid on their other loans.
+  loan_limit_percent: '70',
+  // Paying a loan off early: 'THIS_MONTH' = principal left + this month's interest in full,
+  // 'TO_DATE' = principal left + this month's interest for the days so far.
+  loan_payoff_rule: 'THIS_MONTH',
+  loan_no_prefix: 'LN-',
+  loan_no_padding: '5',
+  loan_no_next: '1',
 } as const;
 
 export type SettingKey = keyof typeof SETTING_DEFAULTS;
@@ -69,7 +78,7 @@ export type Settings = Record<SettingKey, string>;
 export const SETTING_KEYS = Object.keys(SETTING_DEFAULTS) as SettingKey[];
 
 /** Money settings: changing one needs a reason, and each change is kept in the setting history. */
-export const MONEY_SETTINGS: SettingKey[] = ['water_penalty_type', 'water_penalty_value', 'reconnection_fee'];
+export const MONEY_SETTINGS: SettingKey[] = ['water_penalty_type', 'water_penalty_value', 'reconnection_fee', 'loan_limit_percent', 'loan_payoff_rule'];
 
 export async function getSettings(db: Db): Promise<Settings> {
   const rows = await db.setting.findMany();

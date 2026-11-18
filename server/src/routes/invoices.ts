@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { Prisma } from '@prisma/client';
 import { z } from 'zod';
-import { prisma } from '../lib/prisma';
+import { LONG_TX, prisma } from '../lib/prisma';
 import { AppError } from '../lib/errors';
 import { parseMoney } from '../lib/money';
 import { idParam } from '../lib/params';
@@ -34,6 +34,7 @@ const item = z.discriminatedUnion('type', [
   z.object({ type: z.literal('OTHER'), amount: money, description: z.string().trim().max(200).default('') }),
   z.object({ type: z.literal('RICE_LPG'), saleId: z.coerce.number().int().positive(), amount: money }),
   z.object({ type: z.literal('SALE'), items: z.array(z.object({ unitId: z.coerce.number().int().positive(), quantity })).min(1).max(30) }),
+  z.object({ type: z.literal('LOAN'), loanId: z.coerce.number().int().positive(), amount: money, payoff: z.boolean().default(false) }),
 ]);
 
 const invoiceSchema = z.object({
@@ -118,7 +119,7 @@ invoicesRouter.post(
       .object({ reason: z.string({ required_error: 'Please type the reason for cancelling this invoice.' }).trim().min(1, 'Please type the reason for cancelling this invoice.').max(300) })
       .parse(req.body);
     const id = idParam(req.params.id, 'This invoice');
-    await prisma.$transaction((tx) => cancelInvoiceTx(tx, id, reason, req.user!.id));
+    await prisma.$transaction((tx) => cancelInvoiceTx(tx, id, reason, req.user!.id), LONG_TX);
     res.json({ guide: await invoiceGuide(id) });
   }),
 );

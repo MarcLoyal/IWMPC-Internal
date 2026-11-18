@@ -28,6 +28,8 @@ const USERS: { name: string; email: string; role: Role }[] = [
   { name: 'Lorna Mendoza', email: 'cashier@iwmpc.test', role: 'CASHIER' },
   { name: 'Rodel Aquino', email: 'staff@iwmpc.test', role: 'STAFF' },
   { name: 'Atty. Ben Salazar', email: 'board@iwmpc.test', role: 'BOARD' },
+  { name: 'Joy Villanueva', email: 'loans@iwmpc.test', role: 'LOAN_OFFICER' },
+  { name: 'Manager Reyes', email: 'manager@iwmpc.test', role: 'STAFF' },
 ];
 
 interface Person {
@@ -165,6 +167,67 @@ async function seedSales(cashierId: number, adminId: number, or: number): Promis
   return or;
 }
 
+/**
+ * Sample loans: share capital from before the system for some members, a Loan Officer, a Manager
+ * who can approve, and loans at every stage (overdue, due this week, for approval, ready to
+ * release, paid). Returns the next unused invoice number.
+ */
+async function seedLoans(cashierId: number, adminId: number, or: number): Promise<number> {
+  const { applyForLoan, approveLoan, releaseLoan } = await import('../services/loans');
+  const { createInvoice } = await import('../services/invoices');
+  const officer = await prisma.user.findUniqueOrThrow({ where: { email: 'loans@iwmpc.test' } });
+  const manager = await prisma.user.findUniqueOrThrow({ where: { email: 'manager@iwmpc.test' } });
+  if (!(await prisma.accessGrant.findFirst({ where: { userId: manager.id, work: 'APPROVE_LOANS', removedAt: null } }))) {
+    await prisma.accessGrant.create({ data: { userId: manager.id, work: 'APPROVE_LOANS', requestedBy: 'Board of Directors', reason: 'General Manager approves loans (sample)', grantedById: adminId } });
+  }
+  const type = await prisma.loanType.findFirstOrThrow({ where: { name: 'Credit Loan' } });
+  const members = await prisma.account.findMany({ where: { isMember: true }, orderBy: { id: 'asc' }, take: 5 });
+  if (members.length < 5) return or;
+  for (const [i, m] of members.entries()) {
+    await prisma.account.update({ where: { id: m.id }, data: { openingShareCapital: String(8000 + i * 2000) } });
+  }
+  const today = todayManila();
+  // Safe to run again after a failed deploy: each sample loan is found (by member) and moved on to
+  // its stage, and payments are added only to loans that have none yet.
+  const make = async (accountId: number, amount: string, months: number, appliedDaysAgo: number, stage: 'FOR_APPROVAL' | 'APPROVED' | 'RELEASED') => {
+    const applied = addDays(today, -appliedDaysAgo);
+    let loan = await prisma.loan.findFirst({ where: { accountId, purpose: 'Sample loan' }, orderBy: { id: 'asc' } });
+    if (!loan) {
+      loan = await applyForLoan({ accountId, loanTypeId: type.id, amount: parseMoney(amount)!, months, purpose: 'Sample loan' }, officer);
+      await prisma.loan.update({ where: { id: loan.id }, data: { createdAt: new Date(`${applied}T01:00:00Z`) } });
+    }
+    if (stage !== 'FOR_APPROVAL' && loan.status === 'FOR_APPROVAL') loan = await approveLoan(loan.id, manager);
+    if (stage === 'RELEASED' && loan.status === 'APPROVED') loan = await releaseLoan(loan.id, { releaseDate: applied, cashGiven: loan.netCash }, { id: cashierId });
+    return loan;
+  };
+  const hasPayments = async (loanId: number) => (await prisma.payment.count({ where: { loanId, status: 'ACTIVE' } })) > 0;
+  const pay = async (accountId: number, loanId: number, amount: string, daysBack: number) => {
+    // The next invoice number not used yet.
+    while (await prisma.invoice.findUnique({ where: { number: String(or) } })) or++;
+    const { invoice, payments } = await createInvoice({ accountId, walkInName: '', number: String(or++), items: [{ type: 'LOAN', loanId, amount: parseMoney(amount)!, payoff: false }] }, cashierId);
+    const date = toDbDate(addDays(today, -daysBack));
+    await prisma.invoice.update({ where: { id: invoice.id }, data: { invoiceDate: date } });
+    await prisma.payment.updateMany({ where: { id: { in: payments.map((p) => p.id) } }, data: { paymentDate: date } });
+    await prisma.loan.updateMany({ where: { id: loanId, status: 'PAID' }, data: { paidOn: date } });
+  };
+
+  // Released 75 days ago: the 1st installment paid, the 2nd overdue.
+  const overdue = await make(members[0].id, '3000', 6, 75, 'RELEASED');
+  if (!(await hasPayments(overdue.id))) await pay(members[0].id, overdue.id, overdue.monthlyPayment.toFixed(2), 44);
+  // Released 26 days ago: the 1st installment is due this week.
+  await make(members[1].id, '5000', 12, 26, 'RELEASED');
+  // Waiting for the Manager, and approved waiting for the Cashier.
+  await make(members[2].id, '2000', 3, 0, 'FOR_APPROVAL');
+  await make(members[3].id, '1500', 4, 1, 'APPROVED');
+  // Paid in full.
+  const paid = await make(members[4].id, '1000', 2, 70, 'RELEASED');
+  const rows = await prisma.loanInstallment.findMany({ where: { loanId: paid.id }, orderBy: { no: 'asc' } });
+  const done = await prisma.payment.count({ where: { loanId: paid.id, status: 'ACTIVE' } });
+  if (done < 1) await pay(members[4].id, paid.id, rows[0].amount.toFixed(2), 40);
+  if (done < 2) await pay(members[4].id, paid.id, rows[1].amount.toFixed(2), 10);
+  return or;
+}
+
 async function seed() {
   if (process.env.SEED_SAMPLE_DATA !== 'true') {
     console.log('Sample data skipped (SEED_SAMPLE_DATA is not "true").');
@@ -195,6 +258,17 @@ async function seed() {
       await bootstrap();
       await seedSales(cashier.id, admin.id, 950001);
       console.log('Sample Rice & LPG prices and sales added to the existing sample accounts.');
+      added = true;
+    }
+    // Sample loans are added once, and finished if an earlier deploy stopped part-way.
+    const sampleLoans = await prisma.loan.findMany({ where: { purpose: 'Sample loan' }, select: { status: true } });
+    const loansDone = sampleLoans.length >= 5 && sampleLoans.some((l) => l.status === 'PAID');
+    if (cashier && admin && !loansDone && ((await prisma.loan.count()) === 0 || sampleLoans.length > 0)) {
+      await bootstrap();
+      const passwordHash = await bcrypt.hash(SAMPLE_PASSWORD, 10);
+      for (const u of USERS) await prisma.user.upsert({ where: { email: u.email }, update: {}, create: { ...u, passwordHash } });
+      await seedLoans(cashier.id, admin.id, 970001);
+      console.log('Sample loans added to the existing sample accounts.');
       added = true;
     }
     if (added) return;
@@ -306,6 +380,7 @@ async function seed() {
 
   or = await seedWater(staff.id, cashier.id, or);
   or = await seedSales(cashier.id, admin.id, or);
+  or = await seedLoans(cashier.id, admin.id, or);
 
   // A few recent payments, including today's, a skipped OR number, and one voided payment.
   const byName = (name: string) => created.find((c) => c.person.name === name)!.id;

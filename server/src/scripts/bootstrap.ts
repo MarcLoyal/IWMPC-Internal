@@ -11,6 +11,7 @@ import { prisma } from '../lib/prisma';
 import { ensureDefaultRates } from '../services/rates';
 import { ensureDefaultProducts } from '../services/sales';
 import { ensureDefaultSettings } from '../services/settings';
+import { ensureDefaultLoanTypes } from '../services/loans';
 
 export const DEFAULT_AREAS = ['Almasiga', 'Ipil', 'Guijo', 'Narra', 'Narra Extension', 'Yakal', 'Mulawin', 'Kamagong'];
 
@@ -22,6 +23,7 @@ export async function bootstrap() {
   await ensureDefaultSettings(prisma);
   await ensureDefaultRates(prisma);
   await ensureDefaultProducts(prisma);
+  await ensureDefaultLoanTypes(prisma);
 
   if ((await prisma.user.count()) === 0) {
     const email = process.env.ADMIN_EMAIL?.trim().toLowerCase();
