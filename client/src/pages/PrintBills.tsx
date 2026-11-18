@@ -38,16 +38,12 @@ export function PrintBills() {
   const [params, setParams] = useSearchParams();
   const period = params.get('period') ?? '';
   const areaIds = (params.get('areaIds') ?? '').split(',').filter(Boolean);
-  const which = params.get('which') === 'unpaid' ? 'unpaid' : 'all';
-  const sort = params.get('sort') === 'meter' ? 'meter' : 'area';
   // Which form: monthly bills, 2-month notices, or both (two separate PDFs).
   const form = params.get('form') === 'bill' ? 'bill' : params.get('form') === 'notice' ? 'notice' : 'both';
   const disconnectDate = params.get('disconnectDate') ?? '';
   const query = new URLSearchParams();
   if (period) query.set('period', period);
   if (areaIds.length) query.set('areaIds', areaIds.join(','));
-  if (which === 'unpaid') query.set('which', 'unpaid');
-  if (sort === 'meter') query.set('sort', 'meter');
   if (form !== 'both') query.set('form', form);
   if (disconnectDate) query.set('disconnectDate', disconnectDate);
   const summary = useLoad<Summary>(`/water/print/summary?${query}`);
@@ -215,31 +211,6 @@ export function PrintBills() {
                 </span>
               </Field>
             )}
-
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div>
-                <div className="label">Which bills</div>
-                <div className="flex flex-wrap gap-2">
-                  <button type="button" aria-pressed={which === 'all'} onClick={() => set('which', '')} className={choice(which === 'all')}>
-                    All bills
-                  </button>
-                  <button type="button" aria-pressed={which === 'unpaid'} onClick={() => set('which', 'unpaid')} className={choice(which === 'unpaid')}>
-                    Unpaid only
-                  </button>
-                </div>
-              </div>
-              <div>
-                <div className="label">Order</div>
-                <div className="flex flex-wrap gap-2">
-                  <button type="button" aria-pressed={sort === 'area'} onClick={() => set('sort', '')} className={choice(sort === 'area')}>
-                    Area, then name
-                  </button>
-                  <button type="button" aria-pressed={sort === 'meter'} onClick={() => set('sort', 'meter')} className={choice(sort === 'meter')}>
-                    Meter number
-                  </button>
-                </div>
-              </div>
-            </div>
 
             <label className="flex items-start gap-3">
               <input type="checkbox" className="mt-1 h-5 w-5" checked={perArea} onChange={(e) => setPerArea(e.target.checked)} />
