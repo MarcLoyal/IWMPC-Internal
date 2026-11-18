@@ -5,6 +5,7 @@ import { app } from '../app';
 import { prisma } from '../lib/prisma';
 import { ensureDefaultRates } from '../services/rates';
 import { ensureDefaultSettings } from '../services/settings';
+import { ensureDefaultLoanTypes } from '../services/loans';
 
 const PASSWORD = 'password123';
 // Low cost so tests stay fast.
@@ -16,17 +17,18 @@ export async function resetDb() {
   await prisma.$transaction([
     prisma.$executeRawUnsafe("SELECT set_config('iwmpc.test_reset', 'on', true)"),
     prisma.$executeRawUnsafe(
-    'TRUNCATE access_grants, invoices, setting_changes, signature_images, bill_prints, audit_log, payments, sale_items, sales, price_changes, product_units, products, water_bills, meter_readings, rate_schedules, beneficiaries, water_connections, accounts, areas, settings, users RESTART IDENTITY CASCADE',
+    'TRUNCATE loan_payment_lines, loan_deductions, loan_installments, loans, loan_type_changes, loan_types, access_grants, invoices, setting_changes, signature_images, bill_prints, audit_log, payments, sale_items, sales, price_changes, product_units, products, water_bills, meter_readings, rate_schedules, beneficiaries, water_connections, accounts, areas, settings, users RESTART IDENTITY CASCADE',
     ),
   ]);
   await prisma.area.createMany({ data: [{ name: 'Narra' }, { name: 'Ipil' }] });
   await ensureDefaultSettings(prisma);
   await ensureDefaultRates(prisma);
+  await ensureDefaultLoanTypes(prisma);
   await prisma.setting.update({ where: { key: 'membership_fee' }, data: { value: '500.00' } });
   // Most water tests were written for 'due 15 days after the reading'. The default rule has its own tests.
   await prisma.setting.update({ where: { key: 'water_due_rule' }, data: { value: 'DAYS_AFTER_READING' } });
   await prisma.setting.update({ where: { key: 'installation_fee' }, data: { value: '3500.00' } });
-  for (const role of ['ADMIN', 'CASHIER', 'STAFF', 'BOARD'] as Role[]) {
+  for (const role of ['ADMIN', 'CASHIER', 'STAFF', 'BOARD', 'LOAN_OFFICER'] as Role[]) {
     await prisma.user.create({
       data: { name: role, email: `${role.toLowerCase()}@test.local`, role, passwordHash: HASH },
     });

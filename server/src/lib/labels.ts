@@ -7,4 +7,5 @@ export const PAYMENT_TYPE_LABEL: Record<PaymentType, string> = {
   SHARE_CAPITAL: 'Share Capital',
   RICE_LPG: 'Rice & LPG',
   OTHER: 'Other',
+  LOAN: 'Loan Payment',
 };

@@ -8,6 +8,7 @@ import { assertCanPayMembershipFee, completeMembership, revokeMembership } from 
 import { periodLabel } from '../lib/periods';
 import { billForPayment, billState, refreshBillSettled, unpaidBills } from './water';
 import { itemsSummary, onSalePaymentVoided, refreshSaleSettled, saleForPayment, unpaidCreditSales } from './sales';
+import { loanOwed, refreshLoanPaid } from './loans';
 
 export interface NewPayment {
   accountId: number;
@@ -151,6 +152,8 @@ async function voidOne(tx: Prisma.TransactionClient, paymentId: number, reason: 
     if (payment.saleId) await onSalePaymentVoided(tx, payment.saleId, reason.trim(), userId);
     // The water bill goes back to unpaid.
     if (payment.waterBillId) await refreshBillSettled(tx, payment.waterBillId);
+    // The loan's split no longer counts; a paid loan may be owing again.
+    if (payment.loanId) await refreshLoanPaid(tx, payment.loanId);
     return updated;
   }
 }
@@ -162,6 +165,10 @@ export interface OwedItem {
   waterBillId?: number;
   saleId?: number;
   status?: string;
+  /** Loans: the loan, and the amount to pay it off today. */
+  loanId?: number;
+  payoffAmount?: string;
+  balance?: string;
 }
 
 /** What the account still owes, shown on the Cashier screen. Water bills and loans join in 1B/1C. */
@@ -210,6 +217,7 @@ export async function getOwed(accountId: number): Promise<OwedItem[]> {
       saleId: sale.id,
     });
   }
+  for (const loan of await loanOwed(prisma, accountId)) owed.push(loan);
   if (account.membershipStatus === 'PENDING') {
     owed.push({
       type: 'MEMBERSHIP_FEE',

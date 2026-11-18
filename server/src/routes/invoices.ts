@@ -34,6 +34,7 @@ const item = z.discriminatedUnion('type', [
   z.object({ type: z.literal('OTHER'), amount: money, description: z.string().trim().max(200).default('') }),
   z.object({ type: z.literal('RICE_LPG'), saleId: z.coerce.number().int().positive(), amount: money }),
   z.object({ type: z.literal('SALE'), items: z.array(z.object({ unitId: z.coerce.number().int().positive(), quantity })).min(1).max(30) }),
+  z.object({ type: z.literal('LOAN'), loanId: z.coerce.number().int().positive(), amount: money, payoff: z.boolean().default(false) }),
 ]);
 
 const invoiceSchema = z.object({

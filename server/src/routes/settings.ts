@@ -94,6 +94,11 @@ const settingsSchema = z
     invoice_series_to: wholeNumber('the last invoice number', 1, 999999999),
     invoice_tin_line: text(120),
     invoice_phone_line: text(120),
+    loan_limit_percent: wholeNumber('the loan limit percent', 1, 100),
+    loan_payoff_rule: z.enum(['THIS_MONTH', 'TO_DATE'], { errorMap: () => ({ message: 'Please choose how early payment is worked out.' }) }),
+    loan_no_prefix: text(10),
+    loan_no_padding: wholeNumber('the number of digits', 1, 10),
+    loan_no_next: wholeNumber('the next loan number', 1, 999999999),
   })
   .partial();
 
@@ -112,7 +117,7 @@ settingsRouter.put(
     const to = Number(changes.invoice_series_to ?? before.invoice_series_to);
     if (from > to) throw new AppError(400, 'The first invoice number must be smaller than the last one.');
     if (changed.some((k) => MONEY_SETTINGS.includes(k)) && !reason) {
-      throw new AppError(400, 'Please type a short reason for changing the penalty or the reconnection fee.');
+      throw new AppError(400, 'Please type a short reason for changing the penalty, the reconnection fee, or the loan rules.');
     }
     await prisma.$transaction(async (tx) => {
       for (const key of changed) {

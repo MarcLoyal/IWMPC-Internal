@@ -7,6 +7,7 @@ import { periodLabel } from '../lib/periods';
 /** The groups an Admin can filter the Audit Log by. Each action belongs to exactly one. */
 export const AUDIT_CATEGORIES = {
   money: { label: 'Payments, invoices and sales', prefixes: ['payment.', 'invoice.', 'sale.'] },
+  loans: { label: 'Loans, loan types and share capital', prefixes: ['loan.', 'loan-type.', 'share-capital.'] },
   readings: { label: 'Meter readings and bill printing', prefixes: ['reading.', 'bills.'] },
   accounts: { label: 'Accounts, connections and membership', prefixes: ['account.', 'connection.', 'membership.'] },
   users: { label: 'Users and passwords', prefixes: ['user.'] },
@@ -81,6 +82,24 @@ const FIELD_LABEL: Record<string, string> = {
   count: 'Number of bills',
   path: 'Page or action',
   workLabel: 'Work',
+  typeName: 'Loan type',
+  months: 'Months',
+  monthlyPayment: 'Monthly payment',
+  netCash: 'Cash to the member',
+  cashGiven: 'Cash given',
+  releaseDate: 'Release date',
+  limit: 'Can borrow up to',
+  overLimitReason: 'Reason for going above the limit',
+  rejectReason: 'Reason for rejecting',
+  openingShareCapital: 'Share capital before the system',
+  monthlyRate: 'Interest per month (%)',
+  serviceChargePercent: 'Service charge (%)',
+  tscType: 'TSC is',
+  tscValue: 'TSC',
+  penaltyType: 'Late penalty',
+  penaltyValue: 'Late penalty amount',
+  minMonths: 'Shortest term (months)',
+  maxMonths: 'Longest term (months)',
   requestedBy: 'Requested by',
   endsOn: 'Ends on',
   removeReason: 'Reason for removing',
@@ -88,7 +107,7 @@ const FIELD_LABEL: Record<string, string> = {
 
 // Never shown: internal ids, timestamps the entry already has, and anything secret.
 const HIDDEN = new Set(['work', 'id', 'createdAt', 'createdById', 'passwordHash', 'voidedById', 'cancelledById', 'enteredById', 'rateScheduleId', 'readingId', 'billIds', 'payments', 'storageKey', 'data']);
-const MONEY = new Set(['amount', 'total', 'price', 'memberPrice', 'penaltyAmount', 'minimumCharge', 'sharesAmount', 'oldPrice', 'newPrice', 'oldMemberPrice', 'newMemberPrice']);
+const MONEY = new Set(['amount', 'total', 'price', 'memberPrice', 'penaltyAmount', 'minimumCharge', 'sharesAmount', 'oldPrice', 'newPrice', 'oldMemberPrice', 'newMemberPrice', 'principal', 'monthlyPayment', 'netCash', 'cashGiven', 'limit', 'totalDeductions', 'openingShareCapital', 'tscValue', 'notarialFee', 'otherChargeAmount']);
 
 const WORDS: Record<string, string> = {
   ACTIVE: 'Active',
@@ -100,6 +119,13 @@ const WORDS: Record<string, string> = {
   CASHIER: 'Cashier',
   STAFF: 'Staff / Encoder',
   BOARD: 'Board (view only)',
+  LOAN_OFFICER: 'Loan Officer',
+  FOR_APPROVAL: 'For approval',
+  APPROVED: 'Approved',
+  RELEASED: 'Released',
+  PAID: 'Paid',
+  REJECTED: 'Rejected',
+  CANCELLED: 'Cancelled',
   ...PAYMENT_TYPE_LABEL,
 };
 
@@ -231,6 +257,22 @@ function summarize(entry: AuditLog, names: Names): string {
       if (entry.action === 'user.access-expire') return `Extra access ended on its end date: ${name} · ${work}`;
       return `Removed extra access from ${name}: ${work}`;
     }
+    case 'loan.apply':
+      return `Made loan ${txt(a.number)}: ${peso(a.principal)} for ${txt(a.months)} months (${txt(a.typeName)})${forWho}${a.overLimitReason ? ', above the limit' : ''}`;
+    case 'loan.approve':
+      return `Approved loan ${txt(a.number)} (${peso(a.principal)})${forWho}`;
+    case 'loan.reject':
+      return `Rejected loan ${txt(a.number)}${forWho}`;
+    case 'loan.cancel':
+      return `Cancelled loan ${txt(a.number)}${forWho}`;
+    case 'loan.release':
+      return `Released loan ${txt(a.number)}: gave ${peso(a.cashGiven)} in cash${forWho}`;
+    case 'loan-type.create':
+      return `Added loan type ${txt(a.name)}`;
+    case 'loan-type.update':
+      return `Changed loan type ${txt(a.name || b.name)}`;
+    case 'share-capital.opening':
+      return `Set the share capital paid before the system to ${peso(a.openingShareCapital)}${forWho}`;
     case 'login':
       return 'Logged in';
     case 'logout':
@@ -281,7 +323,7 @@ function summarize(entry: AuditLog, names: Names): string {
 function reasonOf(entry: AuditLog): string {
   const a = (isObject(entry.after) ? entry.after : {}) as Json;
   if (entry.action === 'user.access-remove' || entry.action === 'user.access-expire') return txt(a.removeReason || '').trim();
-  return txt(a.voidReason || a.cancelReason || a.reason || '').trim();
+  return txt(a.voidReason || a.cancelReason || a.rejectReason || a.overLimitReason || a.reason || '').trim();
 }
 
 // ---- The list -----------------------------------------------------------------------------------
@@ -298,11 +340,12 @@ export interface AuditFilters {
 
 /** Everything recorded about one account: the account itself, its connections, readings, payments, sales and invoices. */
 async function accountScope(accountId: number): Promise<Prisma.AuditLogWhereInput> {
-  const [connections, payments, sales, invoices] = await Promise.all([
+  const [connections, payments, sales, invoices, loans] = await Promise.all([
     prisma.waterConnection.findMany({ where: { accountId }, select: { id: true } }),
     prisma.payment.findMany({ where: { accountId }, select: { id: true } }),
     prisma.sale.findMany({ where: { accountId }, select: { id: true } }),
     prisma.invoice.findMany({ where: { accountId }, select: { id: true } }),
+    prisma.loan.findMany({ where: { accountId }, select: { id: true } }),
   ]);
   const bills = await prisma.waterBill.findMany({ where: { connectionId: { in: connections.map((c) => c.id) } }, select: { id: true } });
   const ids = (rows: { id: number }[]) => rows.map((r) => String(r.id));
@@ -314,6 +357,7 @@ async function accountScope(accountId: number): Promise<Prisma.AuditLogWhereInpu
       { entity: 'payment', entityId: { in: ids(payments) } },
       { entity: 'sale', entityId: { in: ids(sales) } },
       { entity: 'invoice', entityId: { in: ids(invoices) } },
+      { entity: 'loan', entityId: { in: ids(loans) } },
     ],
   };
 }
@@ -345,15 +389,18 @@ export async function listAudit(filters: AuditFilters) {
     }
     return r.entity === 'account' && r.entityId ? Number(r.entityId) : null;
   };
-  const [connections, bills] = await Promise.all([
+  const [connections, bills, loans] = await Promise.all([
     prisma.waterConnection.findMany({ where: { id: { in: idsFor('connection') } }, select: { id: true, accountId: true } }),
     prisma.waterBill.findMany({ where: { id: { in: idsFor('water_bill') } }, select: { id: true, connection: { select: { accountId: true } } } }),
+    prisma.loan.findMany({ where: { id: { in: idsFor('loan') } }, select: { id: true, accountId: true } }),
   ]);
+  const loanAccount = new Map(loans.map((l) => [l.id, l.accountId]));
   const connAccount = new Map(connections.map((c) => [c.id, c.accountId]));
   const billAccount = new Map(bills.map((b) => [b.id, b.connection.accountId]));
   const resolve = (r: AuditLog): number | null => {
     if (r.entity === 'connection' && r.entityId) return connAccount.get(Number(r.entityId)) ?? accountIdOf(r);
     if (r.entity === 'water_bill' && r.entityId) return billAccount.get(Number(r.entityId)) ?? null;
+    if (r.entity === 'loan' && r.entityId) return loanAccount.get(Number(r.entityId)) ?? accountIdOf(r);
     return accountIdOf(r);
   };
   const accountIds = [...new Set(page.map(resolve).filter((v): v is number => v !== null))];
