@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { api, errorMessage } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import { formatDate, peso } from '../lib/format';
-import { LOAN_STATUS, STANDING, STANDING_BORDER, type Loan, type MemberLoans, type Standing } from '../lib/loans';
+import { LOAN_STATUS, STANDING, STANDING_BORDER, type Loan, type MemberLoans, type Standing, shareCapitalParts } from '../lib/loans';
 import { ScheduleTable } from './LoanParts';
 import { Badge, Button, Card, Field, LinkButton, Notice } from './ui';
 
@@ -53,7 +53,7 @@ export function LoansTab({ data, onChanged }: { data: MemberLoans; onChanged: ()
           <div>
             <div className="text-sm font-semibold uppercase tracking-wide text-slate-500">Paid-up share capital</div>
             <div className="text-2xl font-bold tabular-nums">{peso(data.limit.paidUp)}</div>
-            {Number(data.account.openingShareCapital) > 0 && <div className="text-sm text-slate-600">includes {peso(data.account.openingShareCapital)} from before the system</div>}
+            {shareCapitalParts(data.limit.shareCapital) && <div className="text-sm text-slate-600">{shareCapitalParts(data.limit.shareCapital)}</div>}
           </div>
           <div>
             <div className="text-sm font-semibold uppercase tracking-wide text-slate-500">Can borrow up to</div>

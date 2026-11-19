@@ -279,3 +279,39 @@ async function releasedLoanAttempt(accountId: number, amount: string) {
   const cashier = await loginAs('CASHIER');
   return cashier.post(`/api/loans/${applied.body.id}/release`).send({ releaseDate: todayManila(), cashGiven: '2000.00' });
 }
+
+describe('share capital: the first (membership) payment counts', () => {
+  it('counts the whole membership fee payment, then later Share Capital payments, and drops a voided one', async () => {
+    const admin = await loginAs('ADMIN');
+    const staff = await loginAs('STAFF');
+    const cashier = await loginAs('CASHIER');
+    await admin.put('/api/settings').send({ membership_fee: '500' });
+    const rose = await makeAccount('Rose Santos', 'ACTIVE');
+    await staff.post(`/api/accounts/${rose.id}/make-member`).send({ firstName: 'Rose', lastName: 'Santos', areaId: 1, birthDate: '1980-02-02', sex: 'FEMALE', civilStatus: 'SINGLE' });
+    await admin.post(`/api/accounts/${rose.id}/membership-decision`).send({ decision: 'APPROVED', boardDecisionDate: todayManila() });
+
+    // She joins paying ₱4,000 (more than the ₱500 fee): all of it is her share capital.
+    const fee = await cashier.post('/api/payments').send({ accountId: rose.id, type: 'MEMBERSHIP_FEE', amount: '4000', orNumber: '7001' });
+    expect(fee.status).toBe(201);
+    let limit = (await cashier.get(`/api/loans/member/${rose.id}`)).body.limit;
+    expect(limit).toMatchObject({
+      isMember: true,
+      paidUp: '4000.00',
+      limit: '2800.00',
+      shareCapital: { opening: '0.00', fromMembership: '4000.00', fromPayments: '0.00' },
+    });
+
+    // Later payments are Share Capital.
+    await cashier.post('/api/payments').send({ accountId: rose.id, type: 'SHARE_CAPITAL', amount: '1000', orNumber: '7002' });
+    limit = (await cashier.get(`/api/loans/member/${rose.id}`)).body.limit;
+    expect(limit).toMatchObject({ paidUp: '5000.00', limit: '3500.00', shareCapital: { fromMembership: '4000.00', fromPayments: '1000.00' } });
+
+    // A loan within the limit can be applied for right away.
+    expect((await apply(rose.id, '3500')).status).toBe(201);
+
+    // Voiding the membership payment takes its share capital away with it.
+    await admin.post(`/api/payments/${fee.body.id}/void`).send({ reason: 'Wrong amount' });
+    limit = (await cashier.get(`/api/loans/member/${rose.id}`)).body.limit;
+    expect(limit).toMatchObject({ isMember: false, paidUp: '1000.00', shareCapital: { fromMembership: '0.00' } });
+  });
+});

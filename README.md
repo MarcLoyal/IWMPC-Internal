@@ -47,6 +47,11 @@ water billing and loans.
   3. Approved → **Approved – waiting for fee**: the fee shows under *What they owe*. The **Cashier**
      receives the full fee (or more) and the account becomes a **Member** with the next member number.
   - No membership fee or share capital is received before approval. Approval does not expire.
+  - **Share capital:** the whole first (membership) payment counts as share capital; every payment after
+    that is received as *Share Capital*. Paid-up share capital = that first payment + Share Capital
+    payments + the Admin's "share capital paid before the system". Voided payments do not count. The
+    loan limit (70% by default) uses this total, and the account page, Loans tab and New Loan show
+    where it comes from.
   - Not approved → they can apply again later; every application and decision is kept in the
     account's *Application history* and in the Audit Log.
   - Voiding the membership fee goes back to *Approved – waiting for fee* (the approval stands); the

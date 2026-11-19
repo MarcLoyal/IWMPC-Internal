@@ -19,6 +19,8 @@ export function accountRow(a: Account & { area: Area }) {
 export function accountDetail(a: Account & { area: Area; beneficiaries: Beneficiary[] }) {
   return {
     ...accountRow(a),
+    // Share capital paid before the system (from the paper records; set by the Admin).
+    openingShareCapital: a.openingShareCapital.toFixed(2),
     lastName: a.lastName,
     firstName: a.firstName,
     middleName: a.middleName,
