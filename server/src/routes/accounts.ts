@@ -260,16 +260,20 @@ accountsRouter.get(
       prisma.area.findMany({ orderBy: { id: 'asc' } }),
     ]);
 
-    const water = await waterSummaries(rows.map((r) => r.id), months, today);
-    // Each account's most recent Rice & LPG purchase.
-    const recentSales = rows.length
-      ? await prisma.sale.findMany({
-          where: { accountId: { in: rows.map((r) => r.id) }, status: 'ACTIVE' },
-          orderBy: [{ saleDate: 'desc' }, { id: 'desc' }],
-          distinct: ['accountId'],
-          include: { items: { orderBy: { id: 'asc' } } },
-        })
-      : [];
+    // These three only need the page of accounts, so they are asked for together (one wait, not three).
+    const [water, recentSales, firstBill] = await Promise.all([
+      waterSummaries(rows.map((r) => r.id), months, today),
+      // Each account's most recent Rice & LPG purchase.
+      rows.length
+        ? prisma.sale.findMany({
+            where: { accountId: { in: rows.map((r) => r.id) }, status: 'ACTIVE' },
+            orderBy: [{ saleDate: 'desc' }, { id: 'desc' }],
+            distinct: ['accountId'],
+            include: { items: { orderBy: { id: 'asc' } } },
+          })
+        : Promise.resolve([]),
+      prisma.waterBill.findFirst({ orderBy: { period: 'asc' }, select: { period: true } }),
+    ]);
     const lastPurchase = new Map(
       recentSales.map((sale) => [
         sale.accountId,
@@ -281,7 +285,6 @@ accountsRouter.get(
         },
       ]),
     );
-    const firstBill = await prisma.waterBill.findFirst({ orderBy: { period: 'asc' }, select: { period: true } });
     const members = typeGroups.find((g) => g.isMember)?._count ?? 0;
     const nonMembers = typeGroups.find((g) => !g.isMember)?._count ?? 0;
     const areaCount = new Map(areaGroups.map((g) => [g.areaId, g._count]));
