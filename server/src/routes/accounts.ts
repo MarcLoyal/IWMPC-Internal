@@ -12,7 +12,8 @@ import { allow, allowWork, wrap } from '../middleware/auth';
 import { audit } from '../services/audit';
 import { NO_ACTIVE_CONNECTION, cannotApply, decideMembership, startMembership, type MembershipDetails } from '../services/membership';
 import { nextNumber } from '../services/numbering';
-import { getOwed } from '../services/payments';
+import { getSettings } from '../services/settings';
+import { getOwed, installationFeePaid } from '../services/payments';
 import { addMonths, isPeriod, periodOf } from '../lib/periods';
 import { fromDbDate } from '../lib/dates';
 import { saleItemJson } from '../lib/serialize';
@@ -468,7 +469,11 @@ accountsRouter.get(
 
     res.json({
       account: accountDetail(account),
-      connections: connections.map(connectionJson),
+      connections: connections.map((c) => ({
+        ...connectionJson(c),
+        // Whether an installation fee payment (not voided) is linked to this connection.
+        installationFeePaid: payments.some((p) => p.connectionId === c.id && p.type === 'INSTALLATION_FEE' && p.status === 'ACTIVE'),
+      })),
       payments: payments.map(paymentJson),
       bills: billRows,
       purchases,
@@ -655,6 +660,9 @@ const statusSchema = z.object({
     .min(0)
     .max(99_999_999)
     .optional(),
+  // Admin only: marks a connection Active although no installation fee was received in the system
+  // (paid on paper before the system was used, or waived). Required reason; kept in the Audit Log.
+  feeNotPaidReason: z.string().trim().max(200).optional(),
 });
 
 // Pending Installation -> Active -> Disconnected (and Disconnected -> Active to reconnect).
@@ -663,7 +671,7 @@ connectionsRouter.patch(
   allowWork('ACCOUNTS'),
   wrap(async (req, res) => {
     const id = idParam(req.params.id, 'This connection');
-    const { status, installationDate, initialReading } = statusSchema.parse(req.body);
+    const { status, installationDate, initialReading, feeNotPaidReason } = statusSchema.parse(req.body);
     const before = await prisma.waterConnection.findUnique({ where: { id } });
     if (!before) throw notFound('This connection');
     if (before.status === status) throw new AppError(400, 'The connection already has this status.');
@@ -671,6 +679,24 @@ connectionsRouter.patch(
       throw new AppError(400, 'This connection is not installed yet, so it cannot be disconnected.');
     }
     const firstActivation = before.status === 'PENDING_INSTALLATION' && status === 'ACTIVE';
+    // The installation fee must be received (at the Cashier) before a new connection can be Active.
+    let feeNote = '';
+    if (firstActivation) {
+      const fee = new Prisma.Decimal((await getSettings(prisma)).installation_fee);
+      const paid = await installationFeePaid(prisma, id);
+      if (fee.gt(0) && !paid) {
+        if (!feeNotPaidReason) {
+          throw new AppError(
+            400,
+            `The installation fee (₱${fee.toFixed(2)}) has not been paid for this connection yet. Receive it at the Cashier first, then mark the connection Active.`,
+          );
+        }
+        if (req.user!.role !== 'ADMIN') {
+          throw new AppError(403, 'Only the Admin can mark a connection Active when the installation fee was not received in the system.');
+        }
+        feeNote = feeNotPaidReason;
+      }
+    }
     const after = await prisma.$transaction(async (tx) => {
       const updated = await tx.waterConnection.update({
         where: { id },
@@ -680,7 +706,7 @@ connectionsRouter.patch(
           initialReading: firstActivation ? (initialReading ?? 0) : before.initialReading,
         },
       });
-      await audit(tx, req.user!.id, 'connection.status', 'connection', id, before, updated);
+      await audit(tx, req.user!.id, 'connection.status', 'connection', id, before, feeNote ? { ...updated, installationFeeNotPaidReason: feeNote } : updated);
       return updated;
     });
     res.json(connectionJson(after));

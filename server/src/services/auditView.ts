@@ -240,7 +240,9 @@ function summarize(entry: AuditLog, names: Names): string {
     case 'connection.create':
       return `Added a water connection${forWho}`;
     case 'connection.status':
-      return `Changed a water connection to "${WORDS[txt(a.status)] ?? txt(a.status)}"${forWho}`;
+      return `Changed a water connection to "${WORDS[txt(a.status)] ?? txt(a.status)}"${forWho}${
+        a.installationFeeNotPaidReason ? ` without an installation fee in the system (reason: ${txt(a.installationFeeNotPaidReason)})` : ''
+      }`;
     case 'user.create':
       return `Added user ${txt(a.name)} (${WORDS[txt(a.role)] ?? txt(a.role)})`;
     case 'user.update':

@@ -155,9 +155,71 @@ describe('creating and editing accounts', () => {
     const id = created.body.id;
 
     expect((await staff.patch(`/api/connections/${id}`).send({ status: 'DISCONNECTED' })).status).toBe(400);
+    const cashier = await loginAs('CASHIER');
+    expect((await cashier.post('/api/payments').send({ accountId: juan.id, type: 'INSTALLATION_FEE', amount: '3500', orNumber: '5001' })).status).toBe(201);
     const active = await staff.patch(`/api/connections/${id}`).send({ status: 'ACTIVE', installationDate: '2026-11-01' });
     expect(active.body).toMatchObject({ status: 'ACTIVE', installationDate: '2026-11-01' });
     expect((await staff.patch(`/api/connections/${id}`).send({ status: 'DISCONNECTED' })).body.status).toBe('DISCONNECTED');
+  });
+});
+
+describe('installation fee before Active', () => {
+  async function pendingConnection(name = 'Juan Dela Cruz') {
+    const staff = await loginAs('STAFF');
+    const account = await makeAccount(name);
+    const created = await staff.post(`/api/accounts/${account.id}/connections`).send({ meterSerial: `SN-${name}` });
+    return { staff, account, id: created.body.id as number };
+  }
+  const payFee = async (accountId: number, orNumber: string) =>
+    (await loginAs('CASHIER')).post('/api/payments').send({ accountId, type: 'INSTALLATION_FEE', amount: '3500', orNumber });
+
+  it('cannot be marked Active until the installation fee is paid', async () => {
+    await (await loginAs('ADMIN')).put('/api/settings').send({ installation_fee: '3500' });
+    const { staff, account, id } = await pendingConnection();
+    const early = await staff.patch(`/api/connections/${id}`).send({ status: 'ACTIVE' });
+    expect(early.status).toBe(400);
+    expect(early.body.error).toMatch(/installation fee \(₱3500.00\) has not been paid/);
+    expect((await prisma.waterConnection.findUniqueOrThrow({ where: { id } })).status).toBe('PENDING_INSTALLATION');
+    let profile = await staff.get(`/api/accounts/${account.id}`);
+    expect(profile.body.connections[0].installationFeePaid).toBe(false);
+
+    expect((await payFee(account.id, '5001')).status).toBe(201);
+    profile = await staff.get(`/api/accounts/${account.id}`);
+    expect(profile.body.connections[0].installationFeePaid).toBe(true);
+    expect((await staff.patch(`/api/connections/${id}`).send({ status: 'ACTIVE' })).status).toBe(200);
+  });
+
+  it('a voided installation fee does not count', async () => {
+    const admin = await loginAs('ADMIN');
+    const { staff, account, id } = await pendingConnection();
+    const paid = await payFee(account.id, '5002');
+    await admin.post(`/api/payments/${paid.body.id}/void`).send({ reason: 'Wrong account' });
+    expect((await staff.patch(`/api/connections/${id}`).send({ status: 'ACTIVE' })).status).toBe(400);
+  });
+
+  it('only the Admin can mark it Active without the fee, with a reason kept in the Audit Log', async () => {
+    const admin = await loginAs('ADMIN');
+    const { staff, id } = await pendingConnection();
+    const reason = 'Installed in 2019; fee paid on paper receipt 1234';
+    expect((await staff.patch(`/api/connections/${id}`).send({ status: 'ACTIVE', feeNotPaidReason: reason })).status).toBe(403);
+    expect((await admin.patch(`/api/connections/${id}`).send({ status: 'ACTIVE', feeNotPaidReason: '  ' })).status).toBe(400);
+    const ok = await admin.patch(`/api/connections/${id}`).send({ status: 'ACTIVE', installationDate: '2019-05-01', feeNotPaidReason: reason });
+    expect(ok.status).toBe(200);
+    const log = await prisma.auditLog.findFirstOrThrow({ where: { action: 'connection.status', entityId: String(id) } });
+    expect(log.after).toMatchObject({ status: 'ACTIVE', installationFeeNotPaidReason: reason });
+  });
+
+  it('does not apply to reconnecting, or when the installation fee in Settings is zero', async () => {
+    const admin = await loginAs('ADMIN');
+    const { staff, account, id } = await pendingConnection();
+    await payFee(account.id, '5003');
+    await staff.patch(`/api/connections/${id}`).send({ status: 'ACTIVE' });
+    await staff.patch(`/api/connections/${id}`).send({ status: 'DISCONNECTED' });
+    expect((await staff.patch(`/api/connections/${id}`).send({ status: 'ACTIVE' })).status).toBe(200);
+
+    await admin.put('/api/settings').send({ installation_fee: '0' });
+    const other = await pendingConnection('Maria Santos');
+    expect((await other.staff.patch(`/api/connections/${other.id}`).send({ status: 'ACTIVE' })).status).toBe(200);
   });
 });
 

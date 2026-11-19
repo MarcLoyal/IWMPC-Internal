@@ -172,6 +172,11 @@ export interface OwedItem {
   balance?: string;
 }
 
+/** Whether an installation fee payment (not voided) is linked to this water connection. */
+export async function installationFeePaid(db: Prisma.TransactionClient | typeof prisma, connectionId: number) {
+  return (await db.payment.count({ where: { connectionId, type: 'INSTALLATION_FEE', status: 'ACTIVE' } })) > 0;
+}
+
 /** What the account still owes, shown on the Cashier screen. Water bills and loans join in 1B/1C. */
 export async function getOwed(accountId: number): Promise<OwedItem[]> {
   const [account, settings, bills, creditSales, unpaidInstallations] = await Promise.all([

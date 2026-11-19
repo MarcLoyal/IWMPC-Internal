@@ -195,6 +195,8 @@ export interface Connection {
   initialReading: number;
   installationDate: string | null;
   status: ConnectionStatus;
+  /** On the account page: whether an installation fee payment (not voided) is linked to it. */
+  installationFeePaid?: boolean;
 }
 
 export interface Payment {
