@@ -32,7 +32,7 @@ const choice = (on: boolean) =>
 
 /**
  * Builds a Rice & LPG sale: pick the product, pick the unit, type the quantity, add it.
- * More than one item can be added; they all go under one OR number.
+ * More than one item can be added; they all go under one invoice number.
  */
 export function SaleBuilder({
   products,

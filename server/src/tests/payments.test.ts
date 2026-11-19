@@ -40,7 +40,7 @@ describe('recording payments', () => {
     for (const orNumber of ['', '   ', undefined]) {
       const res = await cashier.post('/api/payments').send({ ...other(account.id, ''), orNumber });
       expect(res.status).toBe(400);
-      expect(res.body.error).toMatch(/OR number/);
+      expect(res.body.error).toMatch(/Invoice No/);
     }
     expect(await prisma.payment.count()).toBe(0);
   });
@@ -88,7 +88,7 @@ describe('duplicate OR numbers', () => {
 
     const again = await admin.post('/api/payments').send(other(juan.id, '1045'));
     expect(again.status).toBe(409);
-    expect(again.body.error).toMatch(/voided/);
+    expect(again.body.error).toMatch(/cancelled/);
   });
 
   it('lets only one of two simultaneous saves with the same OR number through', async () => {

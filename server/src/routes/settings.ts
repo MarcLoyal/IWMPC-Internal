@@ -88,6 +88,12 @@ const settingsSchema = z
     member_no_prefix: text(10),
     member_no_padding: wholeNumber('the number of digits', 1, 10),
     member_no_next: wholeNumber('the next member number', 1, 999999999),
+    invoice_atp_no: text(60),
+    invoice_atp_date: z.union([z.literal(''), z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Please choose the date the ATP was issued.')]),
+    invoice_series_from: wholeNumber('the first invoice number', 1, 999999999),
+    invoice_series_to: wholeNumber('the last invoice number', 1, 999999999),
+    invoice_tin_line: text(120),
+    invoice_phone_line: text(120),
   })
   .partial();
 
@@ -102,6 +108,9 @@ settingsRouter.put(
     const same = (a: string | undefined, b: string | undefined) =>
       a === b || (a !== undefined && b !== undefined && a.trim() !== '' && b.trim() !== '' && !isNaN(Number(a)) && !isNaN(Number(b)) && Number(a) === Number(b));
     const changed = (Object.keys(changes) as SettingKey[]).filter((k) => !same(changes[k], before[k]));
+    const from = Number(changes.invoice_series_from ?? before.invoice_series_from);
+    const to = Number(changes.invoice_series_to ?? before.invoice_series_to);
+    if (from > to) throw new AppError(400, 'The first invoice number must be smaller than the last one.');
     if (changed.some((k) => MONEY_SETTINGS.includes(k)) && !reason) {
       throw new AppError(400, 'Please type a short reason for changing the penalty or the reconnection fee.');
     }

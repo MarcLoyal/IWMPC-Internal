@@ -35,6 +35,11 @@
   size: auto;
   margin: 14mm;
 }
+/* Shown only when someone prints while the invoice guide is open. */
+.guide-print-message {
+  display: none;
+}
+
 @media print {
   html {
     font-size: 12px;
@@ -44,6 +49,16 @@
   }
   .no-print {
     display: none !important;
+  }
+  /* The invoice guide can never be printed: only a short message comes out. */
+  body.invoice-guide-open > *:not(.guide-print-message) {
+    display: none !important;
+  }
+  body.invoice-guide-open .guide-print-message {
+    display: block !important;
+    margin: 40mm 10mm;
+    font: 700 20px/1.4 system-ui, sans-serif;
+    text-align: center;
   }
   /* A pop-up that prints (e.g. a water bill): hide the page behind it on paper. */
   body.print-popup #root {

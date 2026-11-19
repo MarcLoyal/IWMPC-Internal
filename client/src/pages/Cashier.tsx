@@ -1,27 +1,38 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { api, errorMessage } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import { PAYMENT_TYPE, peso } from '../lib/format';
-import type { AccountList, AccountProfile, AccountRow, BillStatus, Payment, PaymentType, Product, SaleLine, Settings } from '../lib/types';
-import { SaleBuilder, cartTotal, lineAmount, type CartItem } from '../components/SaleBuilder';
+import type { AccountList, AccountProfile, AccountRow, BillStatus, OwedItem, PaymentType, Product, Settings } from '../lib/types';
+import { SaleBuilder, cartTotal, type CartItem } from '../components/SaleBuilder';
+import { InvoiceGuideModal, type Guide } from '../components/InvoiceGuide';
 import { useDebounced, useLoad } from '../lib/useLoad';
-import { BILL_STATUS, periodLabel } from '../lib/water';
-import { Badge, Button, Card, Detail, Field, LinkButton, Loading, Modal, Notice, PageHeader } from '../components/ui';
+import { BILL_STATUS } from '../lib/water';
+import { Badge, Button, Card, Field, LinkButton, Loading, Notice, PageHeader } from '../components/ui';
 
 const TYPES: PaymentType[] = ['WATER_BILL', 'RICE_LPG', 'INSTALLATION_FEE', 'MEMBERSHIP_FEE', 'SHARE_CAPITAL', 'OTHER'];
-
-/** What the "saved" screen shows after a payment or a sale. */
-interface Saved {
-  title: string;
-  amount: string;
-  what: string;
-  name: string;
-  orNumber: string | null;
-  accountId: number | null;
-  items: SaleLine[];
-}
 const AMOUNT = /^\d{1,9}(\.\d{1,2})?$/;
+
+/** One thing being paid on this invoice, as the server expects it, plus what the cashier sees. */
+type Payload =
+  | { type: 'WATER_BILL'; waterBillId: number; amount: string }
+  | { type: 'INSTALLATION_FEE' | 'MEMBERSHIP_FEE' | 'SHARE_CAPITAL'; amount: string }
+  | { type: 'OTHER'; amount: string; description: string }
+  | { type: 'RICE_LPG'; saleId: number; amount: string }
+  | { type: 'SALE'; items: { unitId: number; quantity: string }[] };
+
+interface Item {
+  key: string;
+  label: string;
+  amount: number;
+  payload: Payload;
+}
+
+interface NumberCheck {
+  number: string;
+  used: string | null;
+  warning: string | null;
+}
 
 /** What the account owes for water right now: the current bill plus any older unpaid months. */
 function waterDue(a: AccountRow): { amount: number; status: BillStatus } | null {
@@ -41,8 +52,11 @@ function StepTitle({ n, children }: { n: number; children: React.ReactNode }) {
   );
 }
 
+const owedKey = (o: OwedItem) => (o.waterBillId ? `bill-${o.waterBillId}` : o.saleId ? `sale-${o.saleId}` : `owed-${o.type}`);
+
 export function Cashier() {
   const { can } = useAuth();
+  const navigate = useNavigate();
   const canReceive = can('ADMIN', 'CASHIER');
   const [params, setParams] = useSearchParams();
   const accountId = params.get('account');
@@ -81,38 +95,72 @@ export function Cashier() {
   const settings = useLoad<Settings>('/settings');
   const products = useLoad<{ products: Product[] }>('/products');
 
-  const [type, setType] = useState<PaymentType | ''>('');
-  // The water bill being paid (chosen with "Pay This"). Empty = the oldest unpaid bill.
-  const [waterBillId, setWaterBillId] = useState<number | null>(null);
+  // ---- The invoice being made
+  const [items, setItems] = useState<Item[]>([]);
+  const [adding, setAdding] = useState<PaymentType | ''>('');
   const [amount, setAmount] = useState('');
-  const [orNumber, setOrNumber] = useState('');
   const [description, setDescription] = useState('');
-  const [error, setError] = useState('');
-  const [confirming, setConfirming] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [saved, setSaved] = useState<Saved | null>(null);
-  // Rice & LPG: the items in the sale being made, or the earlier credit sale being paid.
+  const [billChoice, setBillChoice] = useState('');
   const [cart, setCart] = useState<CartItem[]>([]);
-  const [saleId, setSaleId] = useState<number | null>(null);
   const [credit, setCredit] = useState(false);
   const [walkInName, setWalkInName] = useState('');
+  const [number, setNumber] = useState('');
+  const [check, setCheck] = useState<NumberCheck | null>(null);
+  const [error, setError] = useState('');
+  // The guide pop-up: a preview before saving, then the saved invoice.
+  const [review, setReview] = useState<{ guide: Guide; warning: string | null } | null>(null);
+  const [saved, setSaved] = useState<{ guide: Guide; accountId: number | null } | null>(null);
+  const [busy, setBusy] = useState(false);
 
-  function resetForm() {
-    setType(walkIn ? 'RICE_LPG' : '');
-    setCart([]);
-    setSaleId(null);
-    setCredit(false);
-    setWaterBillId(null);
+  const account = accountId && String(profile.data?.account.id) === accountId ? profile.data?.account : undefined;
+  const owed = account ? (profile.data?.owed ?? []) : [];
+  const fee = Number(settings.data?.membership_fee ?? 0);
+  const creditAllowed = settings.data?.allow_credit === 'true' && !!account;
+  const total = Math.round(items.reduce((s, i) => s + i.amount, 0) * 100) / 100;
+  const inInvoice = new Set(items.map((i) => i.key));
+
+  function resetInvoice() {
+    setItems([]);
+    setAdding(walkIn ? 'RICE_LPG' : '');
     setAmount('');
-    setOrNumber('');
     setDescription('');
+    setBillChoice('');
+    setCart([]);
+    setCredit(false);
     setError('');
-    setConfirming(false);
+    setReview(null);
   }
-
-  // A different account always starts with a clean form.
+  // A different account always starts with a clean invoice.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(resetForm, [accountId, walkIn]);
+  useEffect(resetInvoice, [accountId, walkIn]);
+
+  // The next number for this cashier (last + 1), always editable.
+  const suggest = useCallback(async () => {
+    try {
+      const res = await api.get<{ next: string }>('/invoices/suggest');
+      setNumber(res.next);
+    } catch {
+      setNumber('');
+    }
+  }, []);
+  useEffect(() => {
+    if (canReceive) void suggest();
+  }, [canReceive, suggest]);
+
+  // Checks the typed number as the cashier types: used (blocked) or outside the series (warning).
+  const debouncedNumber = useDebounced(number.trim(), 350);
+  useEffect(() => {
+    if (!canReceive || !debouncedNumber) return setCheck(null);
+    let stale = false;
+    api
+      .get<NumberCheck>(`/invoices/check?number=${encodeURIComponent(debouncedNumber)}`)
+      .then((res) => !stale && setCheck(res))
+      .catch(() => !stale && setCheck(null));
+    return () => {
+      stale = true;
+    };
+  }, [debouncedNumber, canReceive]);
+  const numberCheck = check && check.number === debouncedNumber.toUpperCase() ? check : null;
 
   function pickAccount(a: AccountRow | null) {
     setSaved(null);
@@ -128,109 +176,112 @@ export function Cashier() {
     setParams({ walkin: '1' }, { replace: true });
   }
 
-  function pickType(next: PaymentType, presetAmount?: string, billId?: number, creditSaleId?: number) {
-    setType(next);
+  function addItem(item: Item) {
+    setItems((list) => [...list.filter((i) => i.key !== item.key), item]);
+    setAdding(walkIn ? 'RICE_LPG' : '');
+    setAmount('');
+    setDescription('');
+    setBillChoice('');
+    setCart([]);
     setError('');
-    setSaleId(creditSaleId ?? null);
-    // Picking "Water Bill" without choosing a month fills in the oldest unpaid bill.
-    const oldest = next === 'WATER_BILL' && !billId ? profile.data?.owed.find((o) => o.type === 'WATER_BILL') : undefined;
-    setWaterBillId(billId ?? oldest?.waterBillId ?? null);
-    if (oldest) presetAmount = oldest.amount;
-    const fee = next === 'MEMBERSHIP_FEE' ? settings.data?.membership_fee : next === 'INSTALLATION_FEE' ? settings.data?.installation_fee : '';
-    const value = presetAmount ?? fee ?? '';
-    setAmount(Number(value) > 0 ? value : '');
   }
 
-  const cleanAmount = amount.replace(/[₱,\s]/g, '');
-  // Only while an account is picked (the last one loaded must not linger after "Change").
-  const account = accountId && String(profile.data?.account.id) === accountId ? profile.data?.account : undefined;
-  const isMember = account?.isMember ?? false;
-  // A new Rice & LPG sale (as opposed to paying an earlier credit sale).
-  const isSale = type === 'RICE_LPG' && !saleId;
-  const creditAllowed = settings.data?.allow_credit === 'true' && !!account;
-  const onCredit = isSale && credit && creditAllowed;
-  const total = cartTotal(cart);
-  const orMissing = !!type && !orNumber.trim() && !onCredit;
-  // The membership fee is paid in full in one payment: less than the fee cannot go on (more is fine).
-  const fee = Number(settings.data?.membership_fee ?? 0);
-  const typed = AMOUNT.test(cleanAmount) ? Number(cleanAmount) : null;
-  const feeProblem =
-    type === 'MEMBERSHIP_FEE' && typed !== null && Math.round(typed * 100) < Math.round(fee * 100)
-      ? `This is ${peso(fee - typed)} short. The membership fee is ${peso(fee)} and must be paid in full.`
-      : null;
-  const creditBeingPaid = profile.data?.owed.find((o) => o.saleId && o.saleId === saleId);
-  const buyerName = account?.fullName ?? (walkInName.trim() || 'Walk-in customer');
-  const billBeingPaid = profile.data?.owed.find((o) => o.waterBillId === waterBillId && o.type === 'WATER_BILL');
-
-  function review() {
-    if (!type) return setError('Please pick the payment type.');
-    if (isSale) {
-      if (cart.length === 0) return setError('Please add at least one item to the sale.');
-      if (!onCredit && !orNumber.trim()) return setError('Please enter the OR number from the receipt booklet.');
-      setError('');
-      return setConfirming(true);
+  /** "Add" beside something they owe. */
+  function addOwed(o: OwedItem) {
+    const amt = Number(o.amount);
+    if (o.type === 'WATER_BILL' && o.waterBillId) {
+      addItem({ key: owedKey(o), label: o.label, amount: amt, payload: { type: 'WATER_BILL', waterBillId: o.waterBillId, amount: o.amount } });
+    } else if (o.type === 'RICE_LPG' && o.saleId) {
+      addItem({ key: owedKey(o), label: o.label, amount: amt, payload: { type: 'RICE_LPG', saleId: o.saleId, amount: o.amount } });
+    } else if (o.type === 'INSTALLATION_FEE' || o.type === 'MEMBERSHIP_FEE') {
+      addItem({ key: owedKey(o), label: o.label, amount: amt, payload: { type: o.type, amount: o.amount } });
     }
-    if (!AMOUNT.test(cleanAmount) || Number(cleanAmount) <= 0) return setError('Please enter a valid amount, for example 1250.00.');
-    if (feeProblem) return setError(feeProblem);
-    if (type === 'OTHER' && !description.trim()) return setError('Please type a short description of what this payment is for.');
-    if (!orNumber.trim()) return setError('Please enter the OR number from the receipt booklet.');
+  }
+
+  const unpaidWater = owed.filter((o) => o.type === 'WATER_BILL');
+
+  /** The small form under the payment type buttons. */
+  function addTyped() {
+    const clean = amount.replace(/[₱,\s]/g, '');
+    const valid = AMOUNT.test(clean) && Number(clean) > 0;
+    if (adding === 'RICE_LPG') {
+      if (!cart.length) return setError('Please add at least one item.');
+      const label = `Rice & LPG: ${cart.map((c) => `${c.productName} ${c.quantity} × ${c.unitLabel}`).join('; ')}`;
+      return addItem({ key: `sale-${Date.now()}`, label, amount: cartTotal(cart), payload: { type: 'SALE', items: cart.map((c) => ({ unitId: c.unitId, quantity: c.quantity })) } });
+    }
+    if (!valid) return setError('Please enter a valid amount, for example 1250.00.');
+    const amt = Number(clean);
+    if (adding === 'WATER_BILL') {
+      const o = unpaidWater.find((w) => String(w.waterBillId) === billChoice) ?? unpaidWater[0];
+      if (!o?.waterBillId) return setError('This account has no unpaid water bill.');
+      if (amt > Number(o.amount)) return setError(`That is more than what is owed for this bill (${peso(o.amount)}).`);
+      return addItem({ key: owedKey(o), label: amt < Number(o.amount) ? `${o.label} (part payment)` : o.label, amount: amt, payload: { type: 'WATER_BILL', waterBillId: o.waterBillId, amount: clean } });
+    }
+    if (adding === 'MEMBERSHIP_FEE' && amt < fee) return setError(`This is ${peso(fee - amt)} short. The membership fee is ${peso(fee)} and must be paid in full.`);
+    if (adding === 'OTHER') {
+      if (!description.trim()) return setError('Please type a short description of what this payment is for.');
+      return addItem({ key: `other-${Date.now()}`, label: `Other: ${description.trim()}`, amount: amt, payload: { type: 'OTHER', amount: clean, description: description.trim() } });
+    }
+    if (adding === 'INSTALLATION_FEE' || adding === 'MEMBERSHIP_FEE' || adding === 'SHARE_CAPITAL') {
+      return addItem({ key: `${adding}-${Date.now()}`, label: PAYMENT_TYPE[adding], amount: amt, payload: { type: adding, amount: clean } });
+    }
+  }
+
+  function pickType(t: PaymentType) {
+    setAdding(t);
     setError('');
-    setConfirming(true);
+    setDescription('');
+    const firstBill = unpaidWater[0];
+    setBillChoice(firstBill?.waterBillId ? String(firstBill.waterBillId) : '');
+    const preset =
+      t === 'WATER_BILL' ? firstBill?.amount : t === 'MEMBERSHIP_FEE' ? settings.data?.membership_fee : t === 'INSTALLATION_FEE' ? settings.data?.installation_fee : '';
+    setAmount(Number(preset) > 0 ? String(preset) : '');
+  }
+
+  const body = () => ({ accountId: account?.id ?? null, walkInName, number: number.trim(), credit, items: items.map((i) => i.payload) });
+  const blocked = !!numberCheck?.used;
+
+  async function openReview() {
+    if (!items.length) return setError('Please add at least one item to the invoice.');
+    if (!number.trim()) return setError('Please enter the Invoice No. from the invoice booklet.');
+    setBusy(true);
+    setError('');
+    try {
+      const res = await api.post<{ guide: Guide; check: NumberCheck }>('/invoices/preview', body());
+      if (res.check.used) return setError(res.check.used);
+      setReview({ guide: res.guide, warning: res.check.warning });
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function save() {
-    if (!type || (!account && !walkIn)) return;
-    setSaving(true);
+    setBusy(true);
     try {
-      if (isSale) {
-        const sale = await api.post<{ total: string; isCredit: boolean; items: SaleLine[]; payment: Payment | null }>('/sales', {
-          accountId: account?.id ?? null,
-          walkInName,
-          items: cart.map((item) => ({ unitId: item.unitId, quantity: item.quantity })),
-          orNumber: onCredit ? '' : orNumber,
-          credit: onCredit,
-        });
-        setSaved({
-          title: sale.isCredit ? 'Credit sale saved' : 'Sale saved',
-          amount: sale.total,
-          what: sale.isCredit ? 'Rice & LPG on credit, to be paid later by' : 'Rice & LPG sold to',
-          name: buyerName,
-          orNumber: sale.payment?.orNumber ?? null,
-          accountId: account?.id ?? null,
-          items: sale.items,
-        });
-      } else if (account) {
-        const payment = await api.post<Payment>('/payments', {
-          accountId: account.id,
-          type,
-          amount: cleanAmount,
-          orNumber,
-          waterBillId: type === 'WATER_BILL' ? waterBillId : null,
-          saleId: type === 'RICE_LPG' ? saleId : null,
-          description: type === 'OTHER' ? description : '',
-        });
-        setSaved({
-          title: 'Payment saved',
-          amount: payment.amount,
-          what: `${PAYMENT_TYPE[payment.type]}${payment.waterBillPeriod ? ` for ${periodLabel(payment.waterBillPeriod)}` : ''}${payment.saleId ? ' (payment for an earlier credit sale)' : ''} from`,
-          name: payment.accountName ?? account.fullName,
-          orNumber: payment.orNumber,
-          accountId: account.id,
-          items: [],
-        });
-      }
-      resetForm();
+      const res = await api.post<{ invoice: { id: number; number: string }; guide: Guide }>('/invoices', body());
+      setReview(null);
+      setSaved({ guide: res.guide, accountId: account?.id ?? null });
+      void profile.reload();
     } catch (err) {
+      setReview(null);
       setError(errorMessage(err));
-      setConfirming(false);
     } finally {
-      setSaving(false);
+      setBusy(false);
     }
   }
 
+  function closeSaved() {
+    setSaved(null);
+    resetInvoice();
+    void suggest();
+    pickAccount(null);
+  }
+
   const header = (
-    <PageHeader title="Cashier" subtitle="Receive a payment and record it with its OR number.">
-      <LinkButton to="/cashier/find">Find by OR Number</LinkButton>
+    <PageHeader title="Cashier" subtitle="Receive payments and write them on a BIR Service Invoice from the booklet.">
+      <LinkButton to="/cashier/find">Find by Invoice No.</LinkButton>
       <LinkButton to="/cashier/daily-report">Daily Collection Report</LinkButton>
       <LinkButton to="/cashier/sales-report">Rice &amp; LPG Sales</LinkButton>
     </PageHeader>
@@ -245,48 +296,8 @@ export function Cashier() {
     );
   }
 
-  if (saved) {
-    return (
-      <>
-        {header}
-        <Card className="max-w-2xl p-8 text-center">
-          <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-emerald-100 text-4xl text-emerald-700">✓</div>
-          <h2 className="text-2xl font-bold text-emerald-800">{saved.title}</h2>
-          <div className="mt-4 text-4xl font-bold tabular-nums">{peso(saved.amount)}</div>
-          <p className="mt-3 text-lg">
-            {saved.what} <strong>{saved.name}</strong>
-          </p>
-          {saved.items.length > 0 && (
-            <ul className="mx-auto mt-3 max-w-md divide-y divide-slate-100 rounded-lg border border-slate-200 text-left">
-              {saved.items.map((item, i) => (
-                <li key={i} className="flex items-baseline justify-between gap-3 px-4 py-2">
-                  <span>
-                    <strong>{item.productName}</strong> · {item.quantity} × {item.unitLabel}
-                  </span>
-                  <span className="font-semibold tabular-nums">{peso(item.amount)}</span>
-                </li>
-              ))}
-            </ul>
-          )}
-          <p className="mt-3 text-lg">
-            {saved.orNumber ? (
-              <>
-                OR Number <strong className="tabular-nums">{saved.orNumber}</strong>
-              </>
-            ) : (
-              'No OR number yet. It is entered when the credit is paid.'
-            )}
-          </p>
-          <div className="mt-7 flex flex-wrap justify-center gap-3">
-            <Button variant="primary" onClick={() => pickAccount(null)}>
-              Receive Another Payment
-            </Button>
-            {saved.accountId && <LinkButton to={`/accounts/${saved.accountId}`}>View Account</LinkButton>}
-          </div>
-        </Card>
-      </>
-    );
-  }
+  const choice = (on: boolean) =>
+    `rounded-lg border-2 px-3 py-2.5 text-base font-semibold ${on ? 'border-brand-700 bg-brand-50 text-brand-800' : 'border-slate-300 bg-white hover:border-slate-400'}`;
 
   return (
     <>
@@ -403,156 +414,194 @@ export function Cashier() {
           )}
         </Card>
 
-        {((account && profile.data) || walkIn) && (
+        {(account || walkIn) && (
           <>
-            {account && profile.data && (
-            <Card className="p-6">
-              <StepTitle n={2}>What they owe</StepTitle>
-              {profile.data.owed.length === 0 ? (
-                <p className="text-slate-600">Nothing unpaid on record. You can still receive a payment below.</p>
-              ) : (
-                <ul className="space-y-2">
-                  {profile.data.owed.map((o, i) => (
-                    <li
-                      key={i}
-                      className={`flex flex-wrap items-center justify-between gap-3 rounded-lg border px-4 py-3 ${
-                        o.status === 'OVERDUE' ? 'border-red-300 bg-red-50' : 'border-amber-300 bg-amber-50'
-                      } ${(o.waterBillId && o.waterBillId === waterBillId) || (o.saleId && o.saleId === saleId) ? 'ring-2 ring-brand-700' : ''}`}
-                    >
-                      <span className="font-semibold">
-                        {o.label}
-                        {o.status === 'OVERDUE' && <span className="ml-2 text-red-700">· Overdue</span>}
-                      </span>
-                      <span className="flex items-center gap-4">
-                        <span className="text-xl font-bold tabular-nums">{peso(o.amount)}</span>
-                        <Button onClick={() => pickType(o.type, o.amount, o.waterBillId, o.saleId)}>Pay This</Button>
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </Card>
+            {account && (
+              <Card className="p-6">
+                <StepTitle n={2}>What they owe</StepTitle>
+                {owed.length === 0 ? (
+                  <p className="text-slate-600">Nothing unpaid on record. You can still add a payment below.</p>
+                ) : (
+                  <>
+                    <ul className="space-y-2">
+                      {owed.map((o) => {
+                        const added = inInvoice.has(owedKey(o));
+                        return (
+                          <li
+                            key={owedKey(o)}
+                            className={`flex flex-wrap items-center justify-between gap-3 rounded-lg border px-4 py-2.5 ${
+                              o.status === 'OVERDUE' ? 'border-red-300 bg-red-50' : 'border-amber-300 bg-amber-50'
+                            }`}
+                          >
+                            <span className="font-semibold">
+                              {o.label}
+                              {o.status === 'OVERDUE' && <span className="ml-2 text-red-700">· Overdue</span>}
+                            </span>
+                            <span className="flex items-center gap-4">
+                              <span className="text-xl font-bold tabular-nums">{peso(o.amount)}</span>
+                              {added ? (
+                                <span className="w-[120px] text-center font-semibold text-emerald-700">✓ On invoice</span>
+                              ) : (
+                                <Button className="w-[120px]" onClick={() => addOwed(o)}>
+                                  Add
+                                </Button>
+                              )}
+                            </span>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                    {unpaidWater.filter((o) => !inInvoice.has(owedKey(o))).length > 1 && (
+                      <Button className="mt-3" onClick={() => unpaidWater.forEach((o) => !inInvoice.has(owedKey(o)) && addOwed(o))}>
+                        Add all unpaid water bills
+                      </Button>
+                    )}
+                  </>
+                )}
+              </Card>
             )}
 
             <Card className="p-6">
-              <StepTitle n={walkIn ? 2 : 3}>{walkIn ? 'Rice & LPG sale' : 'Payment'}</StepTitle>
+              <StepTitle n={account ? 3 : 2}>{walkIn ? 'Rice & LPG sale' : 'Add a payment'}</StepTitle>
               {!walkIn && (
-                <>
-              <div className="label">Payment type</div>
-              <div className="grid grid-cols-2 gap-2 lg:grid-cols-3">
-                {TYPES.map((t) => (
-                  <button
-                    key={t}
-                    type="button"
-                    aria-pressed={type === t}
-                    onClick={() => pickType(t)}
-                    className={`rounded-lg border-2 px-3 py-3 text-lg font-semibold ${
-                      type === t ? 'border-brand-700 bg-brand-50 text-brand-800' : 'border-slate-300 bg-white hover:border-slate-400'
-                    }`}
-                  >
-                    {PAYMENT_TYPE[t]}
-                  </button>
-                ))}
-              </div>
-                </>
+                <div className="grid grid-cols-2 gap-2 lg:grid-cols-3">
+                  {TYPES.map((t) => (
+                    <button key={t} type="button" aria-pressed={adding === t} onClick={() => pickType(t)} className={choice(adding === t)}>
+                      {PAYMENT_TYPE[t]}
+                    </button>
+                  ))}
+                </div>
               )}
 
-              {isSale && (
-                <div className={walkIn ? '' : 'mt-5'}>
+              {adding === 'RICE_LPG' && (
+                <div className={walkIn ? '' : 'mt-4'}>
                   {products.loading && !products.data ? (
                     <Loading what="products" />
                   ) : (
-                    <SaleBuilder products={products.data?.products ?? []} isMember={isMember} items={cart} onChange={setCart} />
+                    <SaleBuilder products={products.data?.products ?? []} isMember={account?.isMember ?? false} items={cart} onChange={setCart} />
+                  )}
+                  {creditAllowed && cart.length > 0 && items.length === 0 && (
+                    <label className="mt-4 flex items-start gap-3">
+                      <input type="checkbox" className="mt-1 h-5 w-5" checked={credit} onChange={(e) => setCredit(e.target.checked)} />
+                      <span>
+                        <span className="font-semibold">Sell on credit (utang)</span>
+                        <span className="block text-sm text-slate-600">Written on a Charge Sales invoice. The amount goes to what {account?.fullName} owes.</span>
+                      </span>
+                    </label>
                   )}
                   {cart.length > 0 && (
-                    <div className="mt-5 grid gap-5 border-t border-slate-200 pt-5 sm:grid-cols-2">
-                      {creditAllowed && (
-                        <label className="flex items-start gap-3 sm:col-span-2">
-                          <input type="checkbox" className="mt-1 h-5 w-5" checked={credit} onChange={(e) => setCredit(e.target.checked)} />
-                          <span>
-                            <span className="font-semibold">Sell on credit (utang)</span>
-                            <span className="block text-sm text-slate-600">
-                              No payment now and no OR number yet. The amount goes to what {account?.fullName} owes.
-                            </span>
-                          </span>
-                        </label>
-                      )}
-                      {!onCredit && (
-                        <Field label="OR Number (required)" hint="One OR number for the whole sale.">
-                          <input
-                            className={`input text-xl font-semibold tabular-nums ${orMissing ? 'border-amber-500 bg-amber-50' : ''}`}
-                            value={orNumber}
-                            onChange={(e) => setOrNumber(e.target.value)}
-                            autoComplete="off"
-                            required
-                            aria-required="true"
-                          />
-                        </Field>
-                      )}
-                    </div>
+                    <Button variant="primary" className="mt-4" onClick={addTyped}>
+                      Add to invoice
+                    </Button>
                   )}
                 </div>
               )}
 
-              {type && !isSale && (
-                <div className="mt-5 grid gap-5 sm:grid-cols-2">
-                  {type === 'OTHER' && (
-                    <Field label="What is this payment for?" className="sm:col-span-2">
+              {adding && adding !== 'RICE_LPG' && (
+                <div className="mt-4 flex flex-wrap items-end gap-4">
+                  {adding === 'WATER_BILL' && (
+                    <Field label="Which month">
+                      <select
+                        className="input w-auto"
+                        value={billChoice}
+                        onChange={(e) => {
+                          setBillChoice(e.target.value);
+                          const o = unpaidWater.find((w) => String(w.waterBillId) === e.target.value);
+                          if (o) setAmount(o.amount);
+                        }}
+                      >
+                        {unpaidWater.length === 0 && <option value="">No unpaid water bill</option>}
+                        {unpaidWater.map((o) => (
+                          <option key={o.waterBillId} value={o.waterBillId}>
+                            {o.label} · {peso(o.amount)}
+                          </option>
+                        ))}
+                      </select>
+                    </Field>
+                  )}
+                  {adding === 'OTHER' && (
+                    <Field label="What is it for?" className="min-w-[220px] flex-1">
                       <input className="input" value={description} onChange={(e) => setDescription(e.target.value)} placeholder="e.g. Certification fee" />
                     </Field>
                   )}
                   <Field
                     label="Amount (₱)"
-                    hint={
-                      type === 'MEMBERSHIP_FEE'
-                        ? `At least ${peso(settings.data?.membership_fee ?? 0)}. Paying more is allowed.`
-                        : type === 'WATER_BILL'
-                          ? billBeingPaid
-                            ? `${billBeingPaid.label}. Part payment is allowed.`
-                            : 'This account has no unpaid water bill.'
-                          : type === 'RICE_LPG' && creditBeingPaid
-                            ? `${creditBeingPaid.label}. Part payment is allowed.`
-                            : undefined
-                    }
+                    hint={adding === 'MEMBERSHIP_FEE' ? `At least ${peso(fee)}.` : adding === 'WATER_BILL' ? 'Part payment is allowed.' : undefined}
                   >
-                    <input
-                      className={`input text-xl font-semibold tabular-nums ${feeProblem ? 'border-red-500 bg-red-50' : ''}`}
-                      inputMode="decimal"
-                      value={amount}
-                      onChange={(e) => setAmount(e.target.value)}
-                      placeholder="0.00"
-                      aria-invalid={!!feeProblem}
-                    />
-                    {feeProblem && <span className="mt-1 block font-semibold text-red-700">{feeProblem}</span>}
+                    <input className="input w-40 text-xl font-semibold tabular-nums" inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0.00" />
                   </Field>
-                  <Field label="OR Number (required)" hint="From the paper Official Receipt you issued.">
-                    <input
-                      className={`input text-xl font-semibold tabular-nums ${orMissing ? 'border-amber-500 bg-amber-50' : ''}`}
-                      value={orNumber}
-                      onChange={(e) => setOrNumber(e.target.value)}
-                      autoComplete="off"
-                      required
-                      aria-required="true"
-                    />
-                  </Field>
+                  <Button variant="primary" className="mb-6" onClick={addTyped}>
+                    Add to invoice
+                  </Button>
                 </div>
               )}
-
-              {error && (
-                <Notice tone="error" className="mt-5">
+              {error && !items.length && (
+                <Notice tone="error" className="mt-4">
                   {error}
                 </Notice>
               )}
-              <div className="mt-6 flex flex-wrap items-center gap-4">
-                {/* The payment cannot go on to the confirm step without an OR number. */}
-                <Button variant="primary" className="px-6 py-3 text-lg" onClick={review} disabled={!type || (isSale ? cart.length === 0 || orMissing : orMissing || !!feeProblem)}>
-                  {isSale ? 'Review Sale' : 'Review Payment'}
+            </Card>
+
+            <Card className="p-6">
+              <StepTitle n={account ? 4 : 3}>This invoice</StepTitle>
+              {items.length === 0 ? (
+                <p className="text-slate-600">Nothing added yet. Use &quot;Add&quot; above for each thing being paid. Several can go on one invoice.</p>
+              ) : (
+                <table className="w-full">
+                  <tbody className="divide-y divide-slate-100">
+                    {items.map((i) => (
+                      <tr key={i.key}>
+                        <td className="py-2 pr-3 font-semibold">{i.label}</td>
+                        <td className="py-2 pr-3 text-right text-lg font-bold tabular-nums">{peso(i.amount)}</td>
+                        <td className="py-2 text-right">
+                          <Button className="px-3 py-1.5 text-sm" onClick={() => setItems((list) => list.filter((x) => x.key !== i.key))}>
+                            Remove
+                          </Button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot className="border-t-2 border-slate-300">
+                    <tr>
+                      <td className="pt-2 text-lg font-bold">Total</td>
+                      <td className="pt-2 text-right text-2xl font-bold tabular-nums">{peso(total)}</td>
+                      <td />
+                    </tr>
+                  </tfoot>
+                </table>
+              )}
+
+              <div className="mt-5 grid gap-4 sm:grid-cols-2">
+                <Field label="Invoice No. (required)" hint="From the BIR Service Invoice booklet. The next number is filled in for you; change it if it is different.">
+                  <input
+                    className={`input text-2xl font-bold tabular-nums ${blocked ? 'border-red-500 bg-red-50' : numberCheck?.warning ? 'border-amber-500 bg-amber-50' : !number.trim() ? 'border-amber-500 bg-amber-50' : ''}`}
+                    value={number}
+                    onChange={(e) => setNumber(e.target.value)}
+                    autoComplete="off"
+                    required
+                    aria-required="true"
+                    aria-invalid={blocked}
+                  />
+                </Field>
+                <div className="self-end pb-7">
+                  {blocked && <p className="font-semibold text-red-700">{numberCheck?.used}</p>}
+                  {!blocked && numberCheck?.warning && <p className="font-semibold text-amber-800">⚠ {numberCheck.warning} You can still continue.</p>}
+                </div>
+              </div>
+
+              {error && items.length > 0 && (
+                <Notice tone="error" className="mt-2">
+                  {error}
+                </Notice>
+              )}
+              <div className="mt-4 flex flex-wrap items-center gap-4">
+                <Button variant="primary" className="px-6 py-3 text-lg" onClick={openReview} disabled={busy || !items.length || !number.trim() || blocked}>
+                  {busy ? 'Preparing…' : 'Review Payment'}
                 </Button>
-                {isSale && cart.length === 0 && <span className="font-semibold text-slate-600">Add at least one item to continue.</span>}
-                {feeProblem ? (
-                  <span className="font-semibold text-red-700">The full membership fee is needed to continue.</span>
+                {!items.length ? (
+                  <span className="font-semibold text-slate-600">Add at least one item to continue.</span>
                 ) : (
-                  orMissing && (!isSale || cart.length > 0) && <span className="font-semibold text-amber-800">Enter the OR number to continue.</span>
+                  !number.trim() && <span className="font-semibold text-amber-800">Enter the Invoice No. to continue.</span>
                 )}
               </div>
             </Card>
@@ -560,57 +609,50 @@ export function Cashier() {
         )}
       </div>
 
-      {confirming && (account || walkIn) && type && (
-        <Modal
+      {review && (
+        <InvoiceGuideModal
           title="Is this correct?"
-          onClose={() => !saving && setConfirming(false)}
+          guide={review.guide}
+          onClose={() => !busy && setReview(null)}
+          top={
+            <>
+              <Notice tone="warning">
+                <span className="font-bold">Not saved yet.</span> Check the values, then click &quot;Yes, Save Payment&quot;. Click &quot;Go Back&quot; to change anything.
+              </Notice>
+              {review.warning && <Notice tone="warning">⚠ {review.warning}</Notice>}
+            </>
+          }
           footer={
             <>
-              <Button onClick={() => setConfirming(false)} disabled={saving}>
-                No, Go Back
+              <Button onClick={() => setReview(null)} disabled={busy}>
+                Go Back
               </Button>
-              <Button variant="success" onClick={save} disabled={saving}>
-                {saving ? 'Saving…' : isSale ? 'Yes, Save Sale' : 'Yes, Save Payment'}
+              <Button variant="success" onClick={save} disabled={busy}>
+                {busy ? 'Saving…' : 'Yes, Save Payment'}
               </Button>
             </>
           }
-        >
-          <dl className="space-y-4">
-            <Detail label="Name">
-              <span className="text-xl font-bold">{buyerName}</span>{' '}
-              <span className="text-slate-500">{account ? `(${account.accountNumber})` : '(no account)'}</span>
-            </Detail>
-            <Detail label="Payment type">
-              <span className="text-xl font-semibold">{PAYMENT_TYPE[type]}</span>
-              {type === 'WATER_BILL' && billBeingPaid && <span className="block text-slate-600">{billBeingPaid.label}</span>}
-              {type === 'OTHER' && <span className="block text-slate-600">{description}</span>}
-              {type === 'RICE_LPG' && creditBeingPaid && <span className="block text-slate-600">{creditBeingPaid.label}</span>}
-              {onCredit && <span className="block font-semibold text-amber-800">On credit (utang): not paid today</span>}
-            </Detail>
-            {isSale && (
-              <Detail label="Items">
-                <ul className="divide-y divide-slate-100 rounded-lg border border-slate-200">
-                  {cart.map((item, i) => (
-                    <li key={i} className="flex items-baseline justify-between gap-3 px-3 py-2">
-                      <span>
-                        <strong>{item.productName}</strong> · {item.quantity} × {item.unitLabel}
-                      </span>
-                      <span className="font-semibold tabular-nums">{peso(lineAmount(item))}</span>
-                    </li>
-                  ))}
-                </ul>
-              </Detail>
-            )}
-            <Detail label={isSale ? 'Total' : 'Amount'}>
-              <span className="text-3xl font-bold tabular-nums">{peso(isSale ? total : cleanAmount)}</span>
-            </Detail>
-            {!onCredit && (
-              <Detail label="OR Number">
-                <span className="text-xl font-bold tabular-nums">{orNumber.trim().toUpperCase()}</span>
-              </Detail>
-            )}
-          </dl>
-        </Modal>
+        />
+      )}
+      {saved && (
+        <InvoiceGuideModal
+          title={`Saved · Invoice No. ${saved.guide.number}`}
+          guide={saved.guide}
+          onClose={closeSaved}
+          top={
+            <Notice tone="success">
+              <span className="font-bold">✓ Payment saved under Invoice No. {saved.guide.number}.</span> Finish copying the values to the paper invoice, then click Close.
+            </Notice>
+          }
+          footer={
+            <>
+              {saved.accountId && <Button onClick={() => navigate(`/accounts/${saved.accountId}`)}>View Account</Button>}
+              <Button variant="primary" onClick={closeSaved}>
+                Close
+              </Button>
+            </>
+          }
+        />
       )}
     </>
   );

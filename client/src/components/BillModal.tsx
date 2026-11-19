@@ -8,6 +8,8 @@ import { useLoad } from '../lib/useLoad';
 import { periodLabel } from '../lib/water';
 import { BillContent, type BillView } from './BillView';
 import { Button, Loading, Notice } from './ui';
+import { InvoiceGuideInline } from './InvoiceGuide';
+import { formatDate } from '../lib/format';
 
 /**
  * A water bill shown as a pop-up over the page. While it is open, Print prints only the bill:
@@ -18,6 +20,13 @@ export function BillModal({ billId, onClose }: { billId: number; onClose: () => 
   const canPrint = useAuth().can('ADMIN', 'STAFF', 'CASHIER');
   const [printing, setPrinting] = useState(false);
   const [printError, setPrintError] = useState('');
+  // A paid bill opens on its invoice; an unpaid one shows only the billing.
+  const invoices = data?.invoices ?? [];
+  const [tab, setTab] = useState<'invoice' | 'billing' | null>(null);
+  const [invoiceId, setInvoiceId] = useState<number | null>(null);
+  const shownTab = invoices.length === 0 ? 'billing' : (tab ?? (data?.bill.status === 'PAID' ? 'invoice' : 'billing'));
+  const active = invoices.filter((i) => i.status === 'ACTIVE');
+  const shownInvoice = invoiceId ?? (active[active.length - 1] ?? invoices[invoices.length - 1])?.id ?? null;
 
   // The same paper form as batch printing (PDF), one bill on the page.
   async function printPaper() {
@@ -58,14 +67,45 @@ export function BillModal({ billId, onClose }: { billId: number; onClose: () => 
         <div className="px-7 py-5 print:p-0">
           {loading && !data && <Loading what="bill" />}
           {error && <Notice tone="error">{error}</Notice>}
-          {data && <BillContent data={data} />}
+          {data && invoices.length > 0 && (
+            <div className="no-print mb-4 flex gap-2 border-b border-slate-200" role="tablist">
+              {(['invoice', 'billing'] as const).map((t) => (
+                <button
+                  key={t}
+                  type="button"
+                  role="tab"
+                  aria-selected={shownTab === t}
+                  onClick={() => setTab(t)}
+                  className={`-mb-px border-b-4 px-4 py-2 text-lg font-semibold ${shownTab === t ? 'border-brand-700 text-brand-800' : 'border-transparent text-slate-500 hover:text-slate-800'}`}
+                >
+                  {t === 'invoice' ? (invoices.length > 1 ? `Invoices (${invoices.length})` : 'Invoice') : 'Billing'}
+                </button>
+              ))}
+            </div>
+          )}
+          {data && shownTab === 'invoice' && (
+            <>
+              {invoices.length > 1 && (
+                <div className="no-print mb-3 flex flex-wrap gap-2">
+                  {invoices.map((i) => (
+                    <Button key={i.id} variant={i.id === shownInvoice ? 'primary' : undefined} className="px-3 py-1.5 text-sm" onClick={() => setInvoiceId(i.id)}>
+                      No. {i.number} · {formatDate(i.date)}
+                      {i.status === 'VOID' && ' (cancelled)'}
+                    </Button>
+                  ))}
+                </div>
+              )}
+              {shownInvoice && <InvoiceGuideInline key={shownInvoice} invoiceId={shownInvoice} />}
+            </>
+          )}
+          {data && shownTab === 'billing' && <BillContent data={data} />}
         </div>
         <div className="no-print flex flex-wrap items-center justify-end gap-3 rounded-b-xl border-t border-slate-200 bg-slate-50 px-6 py-4">
           <span className="mr-auto text-sm text-slate-600">
             {data?.lastPrinted ? `Last printed ${formatDateTime(data.lastPrinted.at)} by ${data.lastPrinted.by}` : data ? 'Not printed yet' : ''}
             {printError && <span className="block text-red-700">{printError}</span>}
           </span>
-          {canPrint && (
+          {canPrint && shownTab === 'billing' && (
             <Button onClick={() => void printPaper()} disabled={!data || printing}>
               {printing ? 'Preparing…' : 'Print Bill'}
             </Button>

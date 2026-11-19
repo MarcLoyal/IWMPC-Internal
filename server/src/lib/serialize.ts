@@ -1,5 +1,6 @@
 import type { Account, Area, Beneficiary, Payment, Sale, SaleItem, User, WaterConnection } from '@prisma/client';
 import { fromDbDate } from './dates';
+import { displayNumber } from './orNumbers';
 
 export function accountRow(a: Account & { area: Area }) {
   return {
@@ -95,7 +96,9 @@ export function paymentJson(p: PaymentWithPeople) {
     accountNumber: p.account?.accountNumber,
     type: p.type,
     amount: p.amount.toFixed(2),
-    orNumber: p.orNumber,
+    // The invoice number (several payments can share one invoice).
+    orNumber: displayNumber(p.orNumber),
+    invoiceId: p.invoiceId,
     // For water bill payments: the month that was paid, e.g. "2026-10".
     waterBillPeriod: p.waterBill?.period ?? null,
     paymentDate: fromDbDate(p.paymentDate)!,

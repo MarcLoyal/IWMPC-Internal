@@ -47,3 +47,8 @@ export function findOrGaps(orNumbers: string[]): OrGap[] {
   }
   return gaps;
 }
+
+/** The number shown to people: an invoice's later payments are stored as "28101#2", shown as "28101". */
+export function displayNumber(stored: string): string {
+  return stored.replace(/#\d+$/, '');
+}

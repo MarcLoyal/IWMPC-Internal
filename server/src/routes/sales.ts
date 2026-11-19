@@ -8,8 +8,10 @@ import { idParam } from '../lib/params';
 import { paymentJson, saleItemJson } from '../lib/serialize';
 import { allow, wrap } from '../middleware/auth';
 import { getSettings } from '../services/settings';
-import { WALK_IN, createSale, voidCreditSale } from '../services/sales';
+import { WALK_IN, voidCreditSale } from '../services/sales';
+import { createSale } from '../services/invoices';
 import { people } from './payments';
+import { displayNumber } from '../lib/orNumbers';
 
 export const salesRouter = Router();
 
@@ -30,7 +32,7 @@ const saleSchema = z.object({
     .array(z.object({ unitId: z.coerce.number().int().positive(), quantity }))
     .min(1, 'Please add at least one item to the sale.')
     .max(30),
-  orNumber: z.string().trim().max(30, 'The OR number is too long.').default(''),
+  orNumber: z.string().trim().max(30, 'The Invoice No. is too long.').default(''),
   credit: z.boolean().default(false),
 });
 
@@ -143,7 +145,7 @@ salesRouter.get(
         buyer: i.sale.account?.fullName ?? (i.sale.walkInName || WALK_IN),
         walkIn: i.sale.accountId === null,
         isCredit: i.sale.isCredit,
-        orNumbers: i.sale.payments.map((p) => p.orNumber),
+        orNumbers: [...new Set(i.sale.payments.map((p) => displayNumber(p.orNumber)))],
       })),
     });
   }),

@@ -13,6 +13,7 @@ import { waterRouter } from './routes/water';
 import { productsRouter } from './routes/products';
 import { salesRouter } from './routes/sales';
 import { signaturesRouter } from './routes/signatures';
+import { invoicesRouter } from './routes/invoices';
 
 export const app = express();
 
@@ -38,6 +39,7 @@ app.use('/api/water', waterRouter);
 app.use('/api/products', productsRouter);
 app.use('/api/sales', salesRouter);
 app.use('/api/signatures', signaturesRouter);
+app.use('/api/invoices', invoicesRouter);
 
 app.use('/api', (_req, _res, next) => next(new AppError(404, 'This page was not found.')));
 app.use(errorHandler);

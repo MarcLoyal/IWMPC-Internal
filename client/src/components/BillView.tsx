@@ -14,6 +14,8 @@ export interface BillView {
   totalDue: string;
   coop: { name: string; address: string; cdaNo: string };
   lastPrinted: { at: string; by: string } | null;
+  /** The invoices this bill was paid on (newest last). */
+  invoices?: { id: number; number: string; date: string; status: 'ACTIVE' | 'VOID' }[];
 }
 
 function Line({ label, children, strong = false }: { label: string; children: React.ReactNode; strong?: boolean }) {
@@ -63,7 +65,7 @@ export function BillContent({ data }: { data: BillView }) {
           <Line label="Water used">{bill.cubicMeters} cu.m</Line>
           <Line label={`Amount for ${periodLabel(bill.period)}`}>{peso(bill.amount)}</Line>
           {Number(bill.penalty) > 0 && <Line label="Late penalty">{peso(bill.penalty)}</Line>}
-          {Number(bill.paid) > 0 && <Line label={`Paid${bill.orNumbers.length ? ` (OR ${bill.orNumbers.join(', ')})` : ''}`}>− {peso(bill.paid)}</Line>}
+          {Number(bill.paid) > 0 && <Line label={`Paid${bill.orNumbers.length ? ` (Invoice No. ${bill.orNumbers.join(', ')})` : ''}`}>− {peso(bill.paid)}</Line>}
           {Number(data.previousBalance) > 0 && (
             <Line label={`Previous Balance (${data.previousMonths.join(', ')})`}>{peso(data.previousBalance)}</Line>
           )}

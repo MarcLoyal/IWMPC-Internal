@@ -4,7 +4,8 @@ import { prisma } from '../lib/prisma';
 import { AppError } from '../lib/errors';
 import { isDateString, toDbDate, todayManila } from '../lib/dates';
 import { PAYMENT_TYPE_LABEL } from '../lib/labels';
-import { findOrGaps } from '../lib/orNumbers';
+import { displayNumber, findOrGaps } from '../lib/orNumbers';
+import { invoiceSeries } from '../services/invoices';
 import { paymentJson } from '../lib/serialize';
 import { wrap } from '../middleware/auth';
 import { getSettings } from '../services/settings';
@@ -43,6 +44,10 @@ reportsRouter.get(
       },
       accounts: { total: members + nonMembers, members, nonMembers },
       overdueWater: { count: overdueAccounts.size, total: overdueTotal.toFixed(2) },
+      invoices: await (async () => {
+        const s = await invoiceSeries();
+        return { remaining: s.remaining, to: s.to, low: s.to > 0 && s.remaining < 2000 };
+      })(),
     });
   }),
 );
@@ -115,7 +120,7 @@ reportsRouter.get(
       count: active.length,
       voidedCount: payments.length - active.length,
       // Voided ORs still count as "used" in the booklet, so they don't create gaps.
-      orGaps: findOrGaps(payments.map((p) => p.orNumber)),
+      orGaps: findOrGaps([...new Set(payments.map((p) => displayNumber(p.orNumber)))]),
     });
   }),
 );
