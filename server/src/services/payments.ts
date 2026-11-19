@@ -40,8 +40,9 @@ export async function addPayment(
   const account = await tx.account.findUnique({ where: { id: input.accountId } });
   if (!account) throw notFound('This account');
 
-  if (input.type === 'SHARE_CAPITAL' && account.membershipStatus === 'NONE') {
-    throw new AppError(400, 'Only members can pay share capital. Open this account and click "Make a Member" first.');
+  // Share capital is for members, and for applicants the Admin has approved (not before approval).
+  if (input.type === 'SHARE_CAPITAL' && account.membershipStatus !== 'MEMBER' && account.membershipStatus !== 'PENDING') {
+    throw new AppError(400, 'Only members, and applicants approved by the Admin, can pay share capital.');
   }
 
   let connectionId: number | null = null;

@@ -218,11 +218,15 @@ function summarize(entry: AuditLog, names: Names): string {
     case 'sale.void':
       return `Voided Rice & LPG sale of ${peso(b.total || a.total)}${forWho}`;
     case 'membership.start':
-      return `Filled in the membership application${forWho}`;
+      return `Submitted the membership application${forWho}`;
+    case 'membership.approve':
+      return `Recorded the Board's approval of the membership application${forWho}`;
+    case 'membership.not-approved':
+      return `Recorded that the Board did not approve the membership application${forWho}`;
     case 'membership.complete':
       return `Became a member (membership fee paid)${forWho}`;
     case 'membership.revoke':
-      return `Removed membership${forWho}`;
+      return `Removed membership (membership fee voided; back to approved, waiting for the fee)${forWho}`;
     case 'reading.create':
       return `Entered the ${a.period ? periodLabel(txt(a.period)) : ''} meter reading: ${reading(a)}${forWho}`;
     case 'reading.correct':

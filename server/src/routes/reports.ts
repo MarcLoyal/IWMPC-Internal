@@ -18,7 +18,7 @@ reportsRouter.get(
   '/home',
   wrap(async (_req, res) => {
     const today = todayManila();
-    const [collections, members, nonMembers, unpaid] = await Promise.all([
+    const [collections, members, nonMembers, unpaid, membershipForApproval] = await Promise.all([
       prisma.payment.aggregate({
         where: { paymentDate: toDbDate(today), status: 'ACTIVE' },
         _sum: { amount: true },
@@ -27,6 +27,7 @@ reportsRouter.get(
       prisma.account.count({ where: { isMember: true } }),
       prisma.account.count({ where: { isMember: false } }),
       unpaidBills(prisma),
+      prisma.account.count({ where: { membershipStatus: 'FOR_APPROVAL' } }),
     ]);
     const overdueAccounts = new Set<number>();
     let overdueTotal = new Prisma.Decimal(0);
@@ -44,6 +45,7 @@ reportsRouter.get(
       },
       accounts: { total: members + nonMembers, members, nonMembers },
       overdueWater: { count: overdueAccounts.size, total: overdueTotal.toFixed(2) },
+      membershipForApproval,
       invoices: await (async () => {
         const s = await invoiceSeries();
         return { remaining: s.remaining, to: s.to, low: s.to > 0 && s.remaining < 2000 };
