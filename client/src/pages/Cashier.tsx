@@ -233,6 +233,22 @@ export function Cashier() {
       if (amt > Number(o.amount)) return setError(`That is more than what is owed for this bill (${peso(o.amount)}).`);
       return addItem({ key: owedKey(o), label: amt < Number(o.amount) ? `${o.label} (part payment)` : o.label, amount: amt, payload: { type: 'WATER_BILL', waterBillId: o.waterBillId, amount: clean } });
     }
+    // Checked again on the server; said here first in plain words.
+    const status = account?.membershipStatus;
+    if (adding === 'MEMBERSHIP_FEE' && status !== 'PENDING') {
+      return setError(
+        status === 'FOR_APPROVAL'
+          ? "This membership application is waiting for the Admin's approval. The fee can be received only after it is approved."
+          : status === 'MEMBER'
+            ? 'This account is already a member.'
+            : status === 'NOT_APPROVED'
+              ? 'This membership application was not approved by the Board, so no membership fee can be received.'
+              : 'There is no approved membership application for this account yet. Staff submit the application first, then the Admin approves it.',
+      );
+    }
+    if (adding === 'SHARE_CAPITAL' && status !== 'MEMBER' && status !== 'PENDING') {
+      return setError('Only members, and applicants approved by the Admin, can pay share capital.');
+    }
     if (adding === 'MEMBERSHIP_FEE' && amt < fee) return setError(`This is ${peso(fee - amt)} short. The membership fee is ${peso(fee)} and must be paid in full.`);
     if (adding === 'OTHER') {
       if (!description.trim()) return setError('Please type a short description of what this payment is for.');

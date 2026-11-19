@@ -115,9 +115,12 @@ export function Badge({ tone, children, small = false }: { tone: Tone; children:
   );
 }
 
-export function MemberBadge({ isMember, pending }: { isMember: boolean; pending?: boolean }) {
+/** Member status: green Member; yellow while an application is moving; grey otherwise. */
+export function MemberBadge({ isMember, status }: { isMember: boolean; status?: string }) {
   if (isMember) return <Badge tone="green">Member</Badge>;
-  if (pending) return <Badge tone="yellow">Non-member · fee not yet paid</Badge>;
+  if (status === 'FOR_APPROVAL') return <Badge tone="yellow">Non-member · application for approval</Badge>;
+  if (status === 'PENDING') return <Badge tone="yellow">Non-member · approved, fee not yet paid</Badge>;
+  if (status === 'NOT_APPROVED') return <Badge tone="gray">Non-member · not approved</Badge>;
   return <Badge tone="gray">Non-member</Badge>;
 }
 

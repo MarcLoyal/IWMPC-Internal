@@ -28,12 +28,23 @@ water billing and loans.
 - **Accounts**: search by name / account no. / member no., Type and Area dropdowns with counts, profile
   with Personal Info, Water (connections) and All Transactions tabs, Print.
 - **Connections**: add a connection, Pending Installation → Active → Disconnected. Needed in 1A because
-  Make a Member requires an active connection. Readings and bills come in 1B.
-- **Paper forms**: the account, Make a Member and Add Connection screens follow IWMPC's Application for
+  a membership application requires an active connection. Readings and bills come in 1B.
+- **Paper forms**: the account, Membership Application and Add Connection screens follow IWMPC's Application for
   Membership and water connection application (Form No. 2-A) field for field.
-- **Make a Member**: staff click *Make a Member* (blocked without an active connection, checked on the
-  server), the cashier records the membership fee in full, and the account becomes a Member with the
-  next member number. Voiding that payment returns the account to Non-member; the number stays reserved.
+- **Becoming a member** (a choice; only accounts with an active water connection can apply):
+  1. **Staff** click *Submit Membership Application* and fill in the paper form → **For approval**.
+  2. The **Board** decides in its meeting; the **Admin** (only the Admin, checked on the server) clicks
+     *Record Board Decision*: Approved or Not approved, the date of the decision, an optional resolution
+     no., and a reason when not approved. Staff cannot set the decision on the form.
+  3. Approved → **Approved – waiting for fee**: the fee shows under *What they owe*. The **Cashier**
+     receives the full fee (or more) and the account becomes a **Member** with the next member number.
+  - No membership fee or share capital is received before approval. Approval does not expire.
+  - Not approved → they can apply again later; every application and decision is kept in the
+    account's *Application history* and in the Audit Log.
+  - Voiding the membership fee goes back to *Approved – waiting for fee* (the approval stands); the
+    member number stays reserved and is given back when the fee is paid again.
+  - *Accounts → Membership Applications* lists For approval / Approved – waiting for fee / Not approved,
+    and Home shows how many are waiting.
 - **Cashier**: pick account → see what they owe → add each thing being paid to one invoice → Invoice No.
   → *Review Payment* (the invoice guide pops up) → save. See *BIR Service Invoices* below. Duplicate
   numbers are blocked with a message saying who and when. Find a payment by Invoice No. Void is Admin
@@ -207,7 +218,7 @@ npm test
 ```
 
 Uses its own database (`TEST_DATABASE_URL`, default `iwmpc_test` on localhost), never the dev or
-preview database. Covers duplicate Invoice No. blocking, the invoice guide values, voiding, the Make a Member rule, roles, search and
+preview database. Covers duplicate Invoice No. blocking, the invoice guide values, voiding, the membership application and approval rules, roles, search and
 filters, invoice-number gap detection and money formatting.
 
 ## Deploying to Vercel + Supabase

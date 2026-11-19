@@ -75,6 +75,7 @@ export function Accounts() {
   return (
     <>
       <PageHeader title="Accounts">
+        <LinkButton to="/accounts/membership-applications">Membership Applications</LinkButton>
         {canDo('ACCOUNTS') && (
           <LinkButton to="/accounts/new" variant="primary">
             + New Account
