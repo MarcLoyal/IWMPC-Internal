@@ -212,6 +212,10 @@ filters, invoice-number gap detection and money formatting.
 
 ## Deploying to Vercel + Supabase
 
+**Region:** `vercel.json` runs the API in Vercel's Tokyo region (`hnd1`), next to the Supabase
+database (Northeast Asia, Tokyo). Keep them in the same region: every screen makes several database
+trips, and a server far from the database makes each one cost about a quarter of a second.
+
 1. Create a Supabase project for IWMPC (separate from other projects).
 2. Import this repo into Vercel as one project (root directory = repo root; `vercel.json` does the rest).
 3. Set these environment variables in Vercel:
