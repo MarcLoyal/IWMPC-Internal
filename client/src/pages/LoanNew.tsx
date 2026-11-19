@@ -1,3 +1,4 @@
+import { shareCapitalParts } from '../lib/loans';
 import { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { api, errorMessage } from '../lib/api';
@@ -115,6 +116,7 @@ export function LoanNew() {
             <div>
               <div className="text-sm font-semibold uppercase tracking-wide text-slate-500">Share capital</div>
               <div className="text-2xl font-bold tabular-nums">{peso(limit.paidUp)}</div>
+              {shareCapitalParts(limit.shareCapital) && <div className="max-w-[260px] text-sm text-slate-600">{shareCapitalParts(limit.shareCapital)}</div>}
             </div>
             <div>
               <div className="text-sm font-semibold uppercase tracking-wide text-slate-500">Can borrow up to</div>

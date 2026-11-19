@@ -559,7 +559,7 @@ export function Cashier() {
                   )}
                   <Field
                     label="Amount (₱)"
-                    hint={adding === 'MEMBERSHIP_FEE' ? `At least ${peso(fee)}.` : adding === 'WATER_BILL' ? 'Part payment is allowed.' : undefined}
+                    hint={adding === 'MEMBERSHIP_FEE' ? `At least ${peso(fee)}. The whole amount counts as share capital.` : adding === 'WATER_BILL' ? 'Part payment is allowed.' : undefined}
                   >
                     <input className="input w-40 text-xl font-semibold tabular-nums" inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0.00" />
                   </Field>

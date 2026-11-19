@@ -61,9 +61,24 @@ export interface Limit {
   isMember: boolean;
   percent: number;
   paidUp: string;
+  /** Where the share capital comes from. */
+  shareCapital?: { opening: string; fromMembership: string; fromPayments: string };
   ofShares: string;
   inUse: string;
   limit: string;
+}
+
+/** "₱4,000.00 from the membership payment · ₱1,000.00 Share Capital payments · …" (only the parts above zero). */
+export function shareCapitalParts(c: Limit['shareCapital']): string {
+  if (!c) return '';
+  const peso = (v: string) => `₱${Number(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  return [
+    Number(c.fromMembership) > 0 && `${peso(c.fromMembership)} from the membership payment`,
+    Number(c.fromPayments) > 0 && `${peso(c.fromPayments)} Share Capital payments`,
+    Number(c.opening) > 0 && `${peso(c.opening)} from before the system`,
+  ]
+    .filter(Boolean)
+    .join(' · ');
 }
 
 export interface ScheduleRow {

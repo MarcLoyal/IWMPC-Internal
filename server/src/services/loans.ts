@@ -58,13 +58,27 @@ export function loanTypeJson(t: Prisma.LoanTypeGetPayload<object>) {
 
 // ---- How much a member can borrow ----------------------------------------------------------------
 
-/** Paid-up share capital: the opening balance from the paper records + Share Capital payments. */
-export async function paidUpShareCapital(db: Db, accountId: number): Promise<D> {
-  const [account, paid] = await Promise.all([
+/**
+ * Paid-up share capital, as IWMPC counts it:
+ *   - the opening balance from the paper records (set by the Admin), plus
+ *   - the membership fee payment: the whole first payment when joining counts as share capital, plus
+ *   - every Share Capital payment after that.
+ * Voided payments do not count.
+ */
+export async function shareCapital(db: Db, accountId: number) {
+  const [account, membership, payments] = await Promise.all([
     db.account.findUnique({ where: { id: accountId }, select: { openingShareCapital: true } }),
+    db.payment.aggregate({ where: { accountId, type: 'MEMBERSHIP_FEE', status: 'ACTIVE' }, _sum: { amount: true } }),
     db.payment.aggregate({ where: { accountId, type: 'SHARE_CAPITAL', status: 'ACTIVE' }, _sum: { amount: true } }),
   ]);
-  return (account?.openingShareCapital ?? ZERO).plus(paid._sum.amount ?? ZERO);
+  const opening = account?.openingShareCapital ?? ZERO;
+  const fromMembership = membership._sum.amount ?? ZERO;
+  const fromPayments = payments._sum.amount ?? ZERO;
+  return { opening, fromMembership, fromPayments, total: opening.plus(fromMembership).plus(fromPayments) };
+}
+
+export async function paidUpShareCapital(db: Db, accountId: number): Promise<D> {
+  return (await shareCapital(db, accountId)).total;
 }
 
 const OPEN: LoanStatus[] = ['FOR_APPROVAL', 'APPROVED', 'RELEASED'];
@@ -83,23 +97,30 @@ async function principalInUse(db: Db, accountId: number, exceptLoanId?: number):
 }
 
 export async function borrowLimit(db: Db, accountId: number, exceptLoanId?: number) {
-  const [account, settings, paidUp, inUse] = await Promise.all([
+  const [account, settings, capital, inUse] = await Promise.all([
     db.account.findUnique({ where: { id: accountId }, select: { isMember: true } }),
     getSettings(db),
-    paidUpShareCapital(db, accountId),
+    shareCapital(db, accountId),
     principalInUse(db, accountId, exceptLoanId),
   ]);
   if (!account) throw notFound('This account');
+  const paidUp = capital.total;
   const percent = Number(settings.loan_limit_percent) || 0;
   const ofShares = cents(paidUp.mul(percent).div(100));
   const limit = account.isMember ? Prisma.Decimal.max(ZERO, ofShares.minus(inUse)) : ZERO;
-  return { isMember: account.isMember, percent, paidUp, ofShares, inUse, limit };
+  return { isMember: account.isMember, percent, paidUp, capital, ofShares, inUse, limit };
 }
 
 type Limit = Awaited<ReturnType<typeof borrowLimit>>;
 
 export function limitJson(l: Limit) {
-  return { isMember: l.isMember, percent: l.percent, paidUp: l.paidUp.toFixed(2), ofShares: l.ofShares.toFixed(2), inUse: l.inUse.toFixed(2), limit: l.limit.toFixed(2) };
+  return {
+    isMember: l.isMember,
+    percent: l.percent,
+    paidUp: l.paidUp.toFixed(2),
+    // Where the share capital comes from: paper records, the first (membership) payment, later payments.
+    shareCapital: { opening: l.capital.opening.toFixed(2), fromMembership: l.capital.fromMembership.toFixed(2), fromPayments: l.capital.fromPayments.toFixed(2) },
+    ofShares: l.ofShares.toFixed(2), inUse: l.inUse.toFixed(2), limit: l.limit.toFixed(2) };
 }
 
 /** "Maximum for this member is ₱X (70% of share capital ₱Y)." */

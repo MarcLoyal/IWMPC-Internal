@@ -74,8 +74,15 @@ export function AccountProfile() {
   const paid = payments.filter((p) => p.status === 'ACTIVE');
   const feePayment = paid.find((p) => p.type === 'MEMBERSHIP_FEE');
   const capitalPayments = paid.filter((p) => p.type === 'SHARE_CAPITAL');
-  const capitalPaid = capitalPayments.reduce((sum, p) => sum + Number(p.amount), 0);
-  const capitalOrs = capitalPayments.map((p) => p.orNumber).join(', ');
+  // The whole first (membership) payment counts as share capital, then every Share Capital payment,
+  // plus any share capital paid before the system.
+  const opening = Number(account.openingShareCapital ?? 0);
+  const capitalPaid = capitalPayments.reduce((sum, p) => sum + Number(p.amount), 0) + (feePayment ? Number(feePayment.amount) : 0) + opening;
+  const capitalParts = [
+    feePayment && `${peso(feePayment.amount)} membership payment (Invoice No. ${feePayment.orNumber})`,
+    capitalPayments.length > 0 && `${peso(capitalPayments.reduce((sum, p) => sum + Number(p.amount), 0))} Share Capital (Invoice No. ${capitalPayments.map((p) => p.orNumber).join(', ')})`,
+    opening > 0 && `${peso(opening)} from before the system`,
+  ].filter(Boolean);
 
   // On paper, every section prints; on screen, only the chosen tab shows.
   const panel = (name: Tab) => (tab === name ? 'block' : 'hidden print:block');
@@ -312,7 +319,16 @@ export function AccountProfile() {
                     ? `${account.sharesSubscribed ?? '—'} shares · ${account.sharesAmount !== null ? peso(account.sharesAmount) : '—'}`
                     : ''}
                 </Detail>
-                <Detail label="Share capital paid">{capitalPaid > 0 ? `${peso(capitalPaid)} · Invoice No. ${capitalOrs}` : 'None yet'}</Detail>
+                <Detail label="Share capital paid">
+                  {capitalPaid > 0 ? (
+                    <>
+                      <strong>{peso(capitalPaid)}</strong>
+                      <span className="block text-sm text-slate-600">{capitalParts.join(' · ')}</span>
+                    </>
+                  ) : (
+                    'None yet'
+                  )}
+                </Detail>
                 <Detail label="Membership fee">{feePayment ? `${peso(feePayment.amount)} · Invoice No. ${feePayment.orNumber}` : 'Not yet paid'}</Detail>
                 <div className={WIDE}>
                   <Detail label="Beneficiaries">

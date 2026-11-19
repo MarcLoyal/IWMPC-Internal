@@ -155,6 +155,8 @@ export interface Beneficiary {
 }
 
 export interface AccountDetail extends AccountRow {
+  /** Share capital paid before the system (from the paper records). */
+  openingShareCapital?: string;
   lastName: string;
   firstName: string;
   middleName: string;
