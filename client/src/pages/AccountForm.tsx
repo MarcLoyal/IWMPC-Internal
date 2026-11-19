@@ -32,8 +32,6 @@ const EMPTY = {
   sharesAmount: '',
   meterRegisteredName: '',
   pmesAttended: '',
-  boardDecision: '',
-  boardDecisionDate: '',
 };
 
 type Form = typeof EMPTY;
@@ -68,8 +66,8 @@ function Section({ title, note, children }: { title: string; note?: string; chil
 }
 
 /**
- * One form for "New Account", "Edit", and "Make a Member".
- * The fields follow IWMPC's paper forms. Make a Member shows the whole Application for
+ * One form for "New Account", "Edit", and "Submit Membership Application".
+ * The fields follow IWMPC's paper forms. The membership application shows the whole Application for
  * Membership; whether the account IS a member is only ever changed by paying the fee.
  */
 export function AccountForm({ makeMember = false }: { makeMember?: boolean }) {
@@ -113,8 +111,6 @@ export function AccountForm({ makeMember = false }: { makeMember?: boolean }) {
       sharesAmount: a.sharesAmount ?? '',
       meterRegisteredName: a.meterRegisteredName || (makeMember ? a.fullName : ''),
       pmesAttended: a.pmesAttended === null ? '' : a.pmesAttended ? 'yes' : 'no',
-      boardDecision: a.boardDecision ?? '',
-      boardDecisionDate: a.boardDecisionDate ?? '',
     });
     // The paper form has three beneficiary lines.
     const rows = [...a.beneficiaries];
@@ -147,7 +143,6 @@ export function AccountForm({ makeMember = false }: { makeMember?: boolean }) {
       sex: form.sex || null,
       civilStatus: form.civilStatus || null,
       pmesAttended: form.pmesAttended === '' ? null : form.pmesAttended === 'yes',
-      boardDecision: form.boardDecision || null,
       ...(showMembership ? { beneficiaries: cleanBeneficiaries(beneficiaries) } : {}),
     };
     try {
@@ -176,10 +171,10 @@ export function AccountForm({ makeMember = false }: { makeMember?: boolean }) {
   return (
     <>
       <PageHeader
-        title={makeMember ? 'Make a Member' : editing ? `Edit ${name}` : 'New Account'}
+        title={makeMember ? 'Membership Application' : editing ? `Edit ${name}` : 'New Account'}
         subtitle={
           makeMember
-            ? `Application for Membership of ${name}. Fill this in from the paper form.`
+            ? `Application for Membership of ${name}. Fill this in from the paper form. After you submit, it waits for the Admin's approval.`
             : editing
               ? undefined
               : 'For a new water applicant. The account number is given automatically when you save.'
@@ -305,18 +300,11 @@ export function AccountForm({ makeMember = false }: { makeMember?: boolean }) {
                   <option value="no">No</option>
                 </select>
               </Field>
-              <Field label="Board decision" className="sm:col-span-2">
-                <select className="input" value={form.boardDecision} onChange={set('boardDecision')}>
-                  <option value="">Not yet decided</option>
-                  <option value="APPROVED">Approved</option>
-                  <option value="DISAPPROVED">Disapproved</option>
-                </select>
-              </Field>
-              <Field label="Date of board decision" className="sm:col-span-2">
-                {input('boardDecisionDate', { type: 'date', disabled: !form.boardDecision })}
-              </Field>
+              <p className="text-slate-600 sm:col-span-4 sm:self-center">
+                <strong>Board decision:</strong> recorded by the Admin after the Board meets, not on this form.
+              </p>
               <p className="text-slate-600 sm:col-span-6">
-                The <strong>membership fee</strong>
+                Once the Admin has approved the application, the <strong>membership fee</strong>
                 {settings.data && <> ({peso(settings.data.membership_fee)})</>} and the <strong>initial paid-up capital</strong> are
                 received at the Cashier, each written on the invoice. They then show on this account automatically.
               </p>
@@ -327,7 +315,7 @@ export function AccountForm({ makeMember = false }: { makeMember?: boolean }) {
         {error && <Notice tone="error">{error}</Notice>}
         <div className="flex flex-wrap gap-3">
           <button type="submit" disabled={saving} className={buttonClass(makeMember ? 'success' : 'primary')}>
-            {saving ? 'Saving…' : makeMember ? 'Save Application' : editing ? 'Save Changes' : 'Save Account'}
+            {saving ? 'Saving…' : makeMember ? 'Submit Application' : editing ? 'Save Changes' : 'Save Account'}
           </button>
           <LinkButton to={backTo}>Cancel</LinkButton>
         </div>

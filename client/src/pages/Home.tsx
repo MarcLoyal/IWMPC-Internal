@@ -4,7 +4,7 @@ import { formatLongDate, peso } from '../lib/format';
 import type { HomeSummary } from '../lib/types';
 import type { LoanSummary } from '../lib/loans';
 import { useLoad } from '../lib/useLoad';
-import { Loading, Notice, PageHeader } from '../components/ui';
+import { LinkButton, Loading, Notice, PageHeader } from '../components/ui';
 
 function SummaryCard({
   to,
@@ -35,7 +35,7 @@ function SummaryCard({
 }
 
 export function Home() {
-  const { user, canDo } = useAuth();
+  const { user, can, canDo } = useAuth();
   const { data, error, loading } = useLoad<HomeSummary>('/reports/home');
   const loans = useLoad<LoanSummary>('/loans/summary').data;
   const n = (count: number, one: string, many: string) => (count === 1 ? `1 ${one}` : `${count.toLocaleString('en-US')} ${many}`);
@@ -51,6 +51,20 @@ export function Home() {
             Only {data.invoices.remaining.toLocaleString('en-US')} invoice numbers are left (up to {data.invoices.to.toLocaleString('en-US')}).
           </span>{' '}
           Please apply for a new Authority to Print and order new invoice booklets.
+        </Notice>
+      )}
+      {data && (data.membershipForApproval ?? 0) > 0 && (
+        <Notice tone="warning" className="mb-5 flex flex-wrap items-center justify-between gap-3">
+          <span>
+            <strong>
+              {data.membershipForApproval === 1 ? '1 membership application is' : `${data.membershipForApproval} membership applications are`} waiting for
+              approval.
+            </strong>{' '}
+            {can('ADMIN') ? "Record the Board's decision once it has met." : 'The Admin records the Board’s decision.'}
+          </span>
+          <LinkButton to="/accounts/membership-applications" variant="primary">
+            Open Applications
+          </LinkButton>
         </Notice>
       )}
       {data && (

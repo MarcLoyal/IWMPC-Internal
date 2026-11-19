@@ -26,6 +26,7 @@ import { SalesReport } from './pages/SalesReport';
 import { BillNotice } from './pages/BillNotice';
 import { Overdue } from './pages/Overdue';
 import { PrintBills } from './pages/PrintBills';
+import { MembershipApplications } from './pages/MembershipApplications';
 import { WaterRates } from './pages/WaterRates';
 import { WaterReadings } from './pages/WaterReadings';
 import type { Role, Work } from './lib/types';
@@ -62,6 +63,7 @@ export function App() {
       <Route element={<Layout />}>
         <Route index element={<Home />} />
         <Route path="accounts" element={<Accounts />} />
+        <Route path="accounts/membership-applications" element={<MembershipApplications />} />
         <Route path="accounts/new" element={<Only work="ACCOUNTS"><AccountForm /></Only>} />
         <Route path="accounts/:id" element={<AccountProfile />} />
         <Route path="accounts/:id/edit" element={<Only work="ACCOUNTS"><AccountForm /></Only>} />

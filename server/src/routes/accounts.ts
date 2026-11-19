@@ -10,7 +10,7 @@ import { idParam } from '../lib/params';
 import { accountDetail, accountRow, connectionJson, paymentJson } from '../lib/serialize';
 import { allow, allowWork, wrap } from '../middleware/auth';
 import { audit } from '../services/audit';
-import { NO_ACTIVE_CONNECTION, startMembership, type MembershipDetails } from '../services/membership';
+import { NO_ACTIVE_CONNECTION, cannotApply, decideMembership, startMembership, type MembershipDetails } from '../services/membership';
 import { nextNumber } from '../services/numbering';
 import { getOwed } from '../services/payments';
 import { addMonths, isPeriod, periodOf } from '../lib/periods';
@@ -112,8 +112,8 @@ const membershipSchema = z.object({
   sharesAmount: optionalMoney,
   meterRegisteredName: text(150),
   pmesAttended: z.boolean().nullable().optional(),
-  boardDecision: z.enum(['APPROVED', 'DISAPPROVED']).nullable().optional(),
-  boardDecisionDate: optionalDate,
+  // The Board's decision is not part of what Staff can enter: only the Admin records it
+  // (POST /:id/membership-decision). Anything sent here is ignored.
 });
 
 function membershipColumns(data: z.infer<typeof membershipSchema>): MembershipDetails {
@@ -124,8 +124,6 @@ function membershipColumns(data: z.infer<typeof membershipSchema>): MembershipDe
     sharesAmount: data.sharesAmount,
     meterRegisteredName: data.meterRegisteredName,
     pmesAttended: data.pmesAttended ?? null,
-    boardDecision: data.boardDecision ?? null,
-    boardDecisionDate: data.boardDecision && data.boardDecisionDate ? toDbDate(data.boardDecisionDate) : null,
   };
 }
 
@@ -300,6 +298,8 @@ accountsRouter.get(
             : 'NONE',
         water: water(r.id),
         lastPurchase: lastPurchase.get(r.id) ?? null,
+        // A non-member who can apply for membership now (no application in progress, active water).
+        canApply: !cannotApply(r.membershipStatus, r.isMember) && r.connections.some((c) => c.status === 'ACTIVE'),
       })),
       offset,
       total,
@@ -339,6 +339,68 @@ accountsRouter.post(
       return created;
     });
     res.status(201).json({ id: account.id, accountNumber: account.accountNumber });
+  }),
+);
+
+type ApplicationRow = Prisma.MembershipApplicationGetPayload<{
+  include: { submittedBy: { select: { name: true } }; decidedBy: { select: { name: true } } };
+}>;
+
+function applicationJson(a: ApplicationRow) {
+  return {
+    id: a.id,
+    appliedOn: fromDbDate(a.appliedOn)!,
+    submittedAt: a.submittedAt.toISOString(),
+    submittedBy: a.submittedBy.name,
+    decision: a.decision,
+    boardDecisionDate: fromDbDate(a.boardDecisionDate),
+    reference: a.reference,
+    reason: a.reason,
+    decidedAt: a.decidedAt?.toISOString() ?? null,
+    decidedBy: a.decidedBy?.name ?? null,
+  };
+}
+
+const APPLICATION_LISTS = {
+  FOR_APPROVAL: 'FOR_APPROVAL',
+  APPROVED: 'PENDING',
+  NOT_APPROVED: 'NOT_APPROVED',
+} as const;
+
+// Membership applications by status: waiting for approval (oldest first), approved and waiting for
+// the fee, or not approved. Everyone logged in can see the list; only the Admin can decide.
+accountsRouter.get(
+  '/membership-applications',
+  wrap(async (req, res) => {
+    const list = (Object.keys(APPLICATION_LISTS) as (keyof typeof APPLICATION_LISTS)[]).find((k) => k === req.query.status) ?? 'FOR_APPROVAL';
+    const [accounts, counts] = await Promise.all([
+      prisma.account.findMany({
+        where: { membershipStatus: APPLICATION_LISTS[list] },
+        include: {
+          area: true,
+          membershipApplications: {
+            include: { submittedBy: { select: { name: true } }, decidedBy: { select: { name: true } } },
+            orderBy: { id: 'desc' },
+            take: 1,
+          },
+        },
+        orderBy: [{ membershipAppliedOn: 'asc' }, { id: 'asc' }],
+        take: 500,
+      }),
+      prisma.account.groupBy({ by: ['membershipStatus'], where: { membershipStatus: { in: Object.values(APPLICATION_LISTS) } }, _count: true }),
+    ]);
+    const count = (status: string) => counts.find((c) => c.membershipStatus === status)?._count ?? 0;
+    res.json({
+      list,
+      counts: { FOR_APPROVAL: count('FOR_APPROVAL'), APPROVED: count('PENDING'), NOT_APPROVED: count('NOT_APPROVED') },
+      rows: accounts.map((a) => ({
+        id: a.id,
+        accountNumber: a.accountNumber,
+        fullName: a.fullName,
+        area: a.area.name,
+        application: a.membershipApplications[0] ? applicationJson(a.membershipApplications[0]) : null,
+      })),
+    });
   }),
 );
 
@@ -432,7 +494,15 @@ accountsRouter.get(
       },
       owed,
       warnings,
-      canMakeMember: !account.isMember && account.membershipStatus === 'NONE' && hasActive,
+      canMakeMember: !cannotApply(account.membershipStatus, account.isMember) && hasActive,
+      // Every membership application and the Board's decision on it, newest first.
+      membershipApplications: (
+        await prisma.membershipApplication.findMany({
+          where: { accountId: id },
+          include: { submittedBy: { select: { name: true } }, decidedBy: { select: { name: true } } },
+          orderBy: { id: 'desc' },
+        })
+      ).map(applicationJson),
     });
   }),
 );
@@ -476,10 +546,8 @@ accountsRouter.post(
     const id = idParam(req.params.id, 'This account');
     const account = await prisma.account.findUnique({ where: { id } });
     if (!account) throw notFound('This account');
-    if (account.isMember) throw new AppError(400, 'This account is already a member.');
-    if (account.membershipStatus === 'PENDING') {
-      throw new AppError(400, 'This account is already waiting for the membership fee.');
-    }
+    const problem = cannotApply(account.membershipStatus, account.isMember);
+    if (problem) throw new AppError(400, problem);
     if ((await prisma.waterConnection.count({ where: { accountId: id, status: 'ACTIVE' } })) === 0) {
       throw new AppError(400, NO_ACTIVE_CONNECTION);
     }
@@ -512,6 +580,27 @@ const connectionSchema = z.object({
   address: z.string().trim().max(250).default(''),
   remarks: z.string().trim().max(500).default(''),
 });
+
+// Admin only: records the Board's decision on a waiting membership application.
+accountsRouter.post(
+  '/:id/membership-decision',
+  allow('ADMIN'),
+  wrap(async (req, res) => {
+    const id = idParam(req.params.id, 'This account');
+    const input = z
+      .object({
+        decision: z.enum(['APPROVED', 'DISAPPROVED'], { errorMap: () => ({ message: 'Please choose Approved or Not approved.' }) }),
+        boardDecisionDate: z
+          .string({ required_error: 'Please enter the date of the Board decision.' })
+          .refine(isDateString, 'Please enter the date of the Board decision.'),
+        reference: text(100),
+        reason: text(300),
+      })
+      .parse(req.body);
+    await prisma.$transaction((tx) => decideMembership(tx, id, input, req.user!.id));
+    res.json({ ok: true });
+  }),
+);
 
 accountsRouter.post(
   '/:id/connections',

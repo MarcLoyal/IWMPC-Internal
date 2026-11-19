@@ -1,11 +1,18 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { prisma } from '../lib/prisma';
+import { todayManila } from '../lib/dates';
 import { loginAs, makeAccount, membershipForm, resetDb } from './helpers';
 
 // Names don't matter in most of these tests; one filled-in form is reused.
 const FORM = membershipForm('Juan Dela Cruz');
 
 beforeEach(resetDb);
+
+/** The Admin records the Board's approval of the waiting application. */
+async function approve(accountId: number, boardDecisionDate = todayManila()) {
+  const res = await (await loginAs('ADMIN')).post(`/api/accounts/${accountId}/membership-decision`).send({ decision: 'APPROVED', boardDecisionDate, reference: 'Res. No. 12' });
+  expect(res.status).toBe(200);
+}
 
 const fee = (accountId: number, orNumber: string, amount = '500.00') => ({
   accountId,
@@ -42,7 +49,12 @@ describe('Make a Member', () => {
     expect(start.status).toBe(200);
 
     let profile = await staff.get(`/api/accounts/${juan.id}`);
-    expect(profile.body.account).toMatchObject({ isMember: false, membershipStatus: 'PENDING', memberNumber: null });
+    expect(profile.body.account).toMatchObject({ isMember: false, membershipStatus: 'FOR_APPROVAL', memberNumber: null });
+    expect(profile.body.owed).toEqual([]);
+
+    await approve(juan.id);
+    profile = await staff.get(`/api/accounts/${juan.id}`);
+    expect(profile.body.account).toMatchObject({ isMember: false, membershipStatus: 'PENDING', boardDecision: 'APPROVED', memberNumber: null });
     expect(profile.body.owed).toMatchObject([{ type: 'MEMBERSHIP_FEE', amount: '500.00' }]);
 
     expect((await cashier.post('/api/payments').send(fee(juan.id, '1045'))).status).toBe(201);
@@ -54,12 +66,21 @@ describe('Make a Member', () => {
     expect(profile.body.owed).toEqual([]);
   });
 
-  it('refuses the membership fee if Make a Member was not clicked first', async () => {
+  it('refuses the membership fee without an application, and while it waits for approval', async () => {
+    const staff = await loginAs('STAFF');
     const cashier = await loginAs('CASHIER');
     const juan = await makeAccount('Juan Dela Cruz', 'ACTIVE');
-    const res = await cashier.post('/api/payments').send(fee(juan.id, '1045'));
-    expect(res.status).toBe(400);
-    expect(res.body.error).toMatch(/Make a Member/);
+    const none = await cashier.post('/api/payments').send(fee(juan.id, '1045'));
+    expect(none.status).toBe(400);
+    expect(none.body.error).toMatch(/no approved membership application/);
+
+    await staff.post(`/api/accounts/${juan.id}/make-member`).send(FORM);
+    const waiting = await cashier.post('/api/payments').send(fee(juan.id, '1045'));
+    expect(waiting.status).toBe(400);
+    expect(waiting.body.error).toMatch(/waiting for the Admin's approval/);
+    // Not through the invoice screen either.
+    const invoice = await cashier.post('/api/invoices').send({ accountId: juan.id, walkInName: '', number: '1045', items: [{ type: 'MEMBERSHIP_FEE', amount: '500' }] });
+    expect(invoice.status).toBe(400);
     expect(await prisma.payment.count()).toBe(0);
   });
 
@@ -68,6 +89,7 @@ describe('Make a Member', () => {
     const cashier = await loginAs('CASHIER');
     const juan = await makeAccount('Juan Dela Cruz', 'ACTIVE');
     await staff.post(`/api/accounts/${juan.id}/make-member`).send(FORM);
+    await approve(juan.id);
     // Disconnected between applying and paying.
     await prisma.waterConnection.updateMany({ where: { accountId: juan.id }, data: { status: 'DISCONNECTED' } });
 
@@ -83,6 +105,7 @@ describe('Make a Member', () => {
     const cashier = await loginAs('CASHIER');
     const juan = await makeAccount('Juan Dela Cruz', 'ACTIVE');
     await staff.post(`/api/accounts/${juan.id}/make-member`).send(FORM);
+    await approve(juan.id);
     for (const amount of ['250', '499.99']) {
       const res = await cashier.post('/api/payments').send(fee(juan.id, '1045', amount));
       expect(res.status).toBe(400);
@@ -100,6 +123,7 @@ describe('Make a Member', () => {
     const cashier = await loginAs('CASHIER');
     const juan = await makeAccount('Juan Dela Cruz', 'ACTIVE');
     await staff.post(`/api/accounts/${juan.id}/make-member`).send(FORM);
+    await approve(juan.id);
     await cashier.post('/api/payments').send(fee(juan.id, '1045'));
 
     expect((await staff.post(`/api/accounts/${juan.id}/make-member`).send(FORM)).status).toBe(400);
@@ -132,32 +156,36 @@ describe('Make a Member', () => {
     for (const [i, name] of ['Ana', 'Ben', 'Carla'].entries()) {
       const account = await makeAccount(name, 'ACTIVE');
       await admin.post(`/api/accounts/${account.id}/make-member`).send(FORM);
+      await approve(account.id);
       await admin.post('/api/payments').send(fee(account.id, String(2000 + i)));
       numbers.push((await prisma.account.findUniqueOrThrow({ where: { id: account.id } })).memberNumber);
     }
     expect(numbers).toEqual(['M-0123', 'M-0125', 'M-0126']);
   });
 
-  it('voiding the membership fee returns the account to Non-member but keeps the number reserved', async () => {
+  it('voiding the membership fee goes back to Approved – waiting for fee, and keeps the number reserved', async () => {
     const admin = await loginAs('ADMIN');
     const juan = await makeAccount('Juan Dela Cruz', 'ACTIVE');
     await admin.post(`/api/accounts/${juan.id}/make-member`).send(FORM);
+    await approve(juan.id);
     const payment = await admin.post('/api/payments').send(fee(juan.id, '1045'));
     await admin.post(`/api/payments/${payment.body.id}/void`).send({ reason: 'Receipt cancelled' });
 
     const profile = await admin.get(`/api/accounts/${juan.id}`);
-    expect(profile.body.account).toMatchObject({ isMember: false, membershipStatus: 'NONE', memberNumber: null });
+    // The Board's approval still stands: the fee can simply be received again.
+    expect(profile.body.account).toMatchObject({ isMember: false, membershipStatus: 'PENDING', memberNumber: null });
+    expect(profile.body.owed).toMatchObject([{ type: 'MEMBERSHIP_FEE' }]);
     // The number is still held on the record, so nobody else can get it.
     expect((await prisma.account.findUniqueOrThrow({ where: { id: juan.id } })).memberNumber).toBe('0001');
 
     const maria = await makeAccount('Maria Santos', 'ACTIVE');
     await admin.post(`/api/accounts/${maria.id}/make-member`).send(FORM);
+    await approve(maria.id);
     await admin.post('/api/payments').send(fee(maria.id, '1046'));
     expect((await prisma.account.findUniqueOrThrow({ where: { id: maria.id } })).memberNumber).toBe('0002');
 
-    // If Juan joins again he gets his old number back.
-    await admin.post(`/api/accounts/${juan.id}/make-member`).send(FORM);
-    await admin.post('/api/payments').send(fee(juan.id, '1047'));
+    // When Juan pays again (no new application needed) he gets his old number back.
+    expect((await admin.post('/api/payments').send(fee(juan.id, '1047'))).status).toBe(201);
     expect((await prisma.account.findUniqueOrThrow({ where: { id: juan.id } })).memberNumber).toBe('0001');
   });
 
@@ -165,6 +193,7 @@ describe('Make a Member', () => {
     const admin = await loginAs('ADMIN');
     const juan = await makeAccount('Juan Dela Cruz', 'ACTIVE');
     await admin.post(`/api/accounts/${juan.id}/make-member`).send(FORM);
+    await approve(juan.id);
     await admin.post('/api/payments').send(fee(juan.id, '1045'));
     const connection = await prisma.waterConnection.findFirstOrThrow({ where: { accountId: juan.id } });
 
@@ -218,15 +247,16 @@ describe('Make a Member', () => {
       tin: '123-456-789',
       religion: 'Roman Catholic',
       education: 'High School Graduate',
-      membershipStatus: 'PENDING',
+      membershipStatus: 'FOR_APPROVAL',
       membershipAppliedOn: '2026-11-10',
       membershipPurpose: 'To avail of services',
       sharesSubscribed: 10,
       sharesAmount: '1000.00',
       meterRegisteredName: 'Maria Dela Cruz',
       pmesAttended: true,
-      boardDecision: 'APPROVED',
-      boardDecisionDate: '2026-11-11',
+      // Sent by Staff, but only the Admin can record the Board's decision.
+      boardDecision: null,
+      boardDecisionDate: null,
     });
     expect(account.beneficiaries).toHaveLength(2);
   });
@@ -247,16 +277,18 @@ describe('Make a Member', () => {
     expect(account.pmesAttended).toBeNull();
   });
 
-  it('records share capital with its own OR number, for members and applicants only', async () => {
+  it('records share capital for members and approved applicants only, not while waiting for approval', async () => {
     const admin = await loginAs('ADMIN');
     const juan = await makeAccount('Juan Dela Cruz', 'ACTIVE');
     const capital = (orNumber: string) => ({ accountId: juan.id, type: 'SHARE_CAPITAL', amount: '1000', orNumber });
 
     const tooEarly = await admin.post('/api/payments').send(capital('2001'));
     expect(tooEarly.status).toBe(400);
-    expect(tooEarly.body.error).toMatch(/Only members can pay share capital/);
+    expect(tooEarly.body.error).toMatch(/Only members, and applicants approved by the Admin/);
 
     await admin.post(`/api/accounts/${juan.id}/make-member`).send(FORM);
+    expect((await admin.post('/api/payments').send(capital('2001'))).status).toBe(400);
+    await approve(juan.id);
     expect((await admin.post('/api/payments').send(capital('2001'))).status).toBe(201);
     // Paying share capital alone does not make someone a member.
     expect((await prisma.account.findUniqueOrThrow({ where: { id: juan.id } })).isMember).toBe(false);
@@ -267,5 +299,120 @@ describe('Make a Member', () => {
       { type: 'MEMBERSHIP_FEE', count: 1, total: '500.00' },
       { type: 'SHARE_CAPITAL', count: 1, total: '1000.00' },
     ]);
+  });
+});
+
+describe('Membership approval (Board decision recorded by the Admin)', () => {
+  const decide = (agent: Awaited<ReturnType<typeof loginAs>>, id: number, body: Record<string, unknown>) =>
+    agent.post(`/api/accounts/${id}/membership-decision`).send(body);
+
+  it('is for the Admin only, checked on the server', async () => {
+    const staff = await loginAs('STAFF');
+    const juan = await makeAccount('Juan Dela Cruz', 'ACTIVE');
+    await staff.post(`/api/accounts/${juan.id}/make-member`).send(FORM);
+    const approved = { decision: 'APPROVED', boardDecisionDate: todayManila() };
+    for (const role of ['STAFF', 'CASHIER', 'BOARD', 'LOAN_OFFICER'] as const) {
+      expect((await decide(await loginAs(role), juan.id, approved)).status).toBe(403);
+    }
+    // Even a Staff member given extra work cannot approve: approval is not something that can be given.
+    expect((await prisma.account.findUniqueOrThrow({ where: { id: juan.id } })).membershipStatus).toBe('FOR_APPROVAL');
+    expect((await decide(await loginAs('ADMIN'), juan.id, approved)).status).toBe(200);
+  });
+
+  it('needs the date of the Board decision (not in the future), and a reason when not approved', async () => {
+    const admin = await loginAs('ADMIN');
+    const juan = await makeAccount('Juan Dela Cruz', 'ACTIVE');
+    await admin.post(`/api/accounts/${juan.id}/make-member`).send(FORM);
+    expect((await decide(admin, juan.id, { decision: 'APPROVED' })).body.error).toMatch(/date of the Board decision/);
+    expect((await decide(admin, juan.id, { decision: 'APPROVED', boardDecisionDate: '2999-01-01' })).body.error).toMatch(/future/);
+    expect((await decide(admin, juan.id, { decision: 'DISAPPROVED', boardDecisionDate: todayManila(), reason: ' ' })).body.error).toMatch(/reason/);
+    expect((await decide(admin, juan.id, { decision: 'MAYBE', boardDecisionDate: todayManila() })).status).toBe(400);
+    expect((await prisma.account.findUniqueOrThrow({ where: { id: juan.id } })).membershipStatus).toBe('FOR_APPROVAL');
+  });
+
+  it('cannot decide when nothing is waiting, or decide twice', async () => {
+    const admin = await loginAs('ADMIN');
+    const juan = await makeAccount('Juan Dela Cruz', 'ACTIVE');
+    const body = { decision: 'APPROVED', boardDecisionDate: todayManila() };
+    expect((await decide(admin, juan.id, body)).body.error).toMatch(/no membership application waiting/);
+    await admin.post(`/api/accounts/${juan.id}/make-member`).send(FORM);
+    expect((await decide(admin, juan.id, body)).status).toBe(200);
+    expect((await decide(admin, juan.id, body)).status).toBe(400);
+    // And Staff cannot submit again while it is approved and waiting for the fee.
+    const again = await admin.post(`/api/accounts/${juan.id}/make-member`).send(FORM);
+    expect(again.body.error).toMatch(/already approved/);
+  });
+
+  it('not approved: no fee can be received; they can apply again later and the old decision stays in the history', async () => {
+    const staff = await loginAs('STAFF');
+    const admin = await loginAs('ADMIN');
+    const cashier = await loginAs('CASHIER');
+    const juan = await makeAccount('Juan Dela Cruz', 'ACTIVE');
+    await staff.post(`/api/accounts/${juan.id}/make-member`).send({ ...FORM, membershipAppliedOn: '2026-01-05' });
+    const no = await decide(admin, juan.id, { decision: 'DISAPPROVED', boardDecisionDate: '2026-02-01', reference: 'Res. No. 3', reason: 'Incomplete requirements' });
+    expect(no.status).toBe(200);
+
+    let profile = await staff.get(`/api/accounts/${juan.id}`);
+    expect(profile.body.account).toMatchObject({ membershipStatus: 'NOT_APPROVED', boardDecision: 'DISAPPROVED', boardDecisionDate: '2026-02-01', isMember: false });
+    expect(profile.body.canMakeMember).toBe(true);
+    const paid = await cashier.post('/api/payments').send(fee(juan.id, '1045'));
+    expect(paid.body.error).toMatch(/not approved by the Board/);
+
+    // Applying again.
+    expect((await staff.post(`/api/accounts/${juan.id}/make-member`).send({ ...FORM, membershipAppliedOn: '2026-03-01' })).status).toBe(200);
+    profile = await staff.get(`/api/accounts/${juan.id}`);
+    expect(profile.body.account).toMatchObject({ membershipStatus: 'FOR_APPROVAL', boardDecision: null });
+    await approve(juan.id);
+    expect((await cashier.post('/api/payments').send(fee(juan.id, '1045'))).status).toBe(201);
+
+    profile = await staff.get(`/api/accounts/${juan.id}`);
+    expect(profile.body.account).toMatchObject({ isMember: true, membershipStatus: 'MEMBER' });
+    expect(profile.body.membershipApplications).toMatchObject([
+      { appliedOn: '2026-03-01', decision: 'APPROVED', reference: 'Res. No. 12', decidedBy: expect.any(String) },
+      { appliedOn: '2026-01-05', decision: 'DISAPPROVED', boardDecisionDate: '2026-02-01', reference: 'Res. No. 3', reason: 'Incomplete requirements', submittedBy: expect.any(String) },
+    ]);
+    // Every step is in the Audit Log.
+    const actions = (await prisma.auditLog.findMany({ where: { entityId: String(juan.id), action: { startsWith: 'membership.' } }, orderBy: { id: 'asc' } })).map((a) => a.action);
+    expect(actions).toEqual(['membership.start', 'membership.not-approved', 'membership.start', 'membership.approve', 'membership.complete']);
+  });
+
+  it('lists applications by status for everyone, and counts the waiting ones on Home', async () => {
+    const staff = await loginAs('STAFF');
+    const board = await loginAs('BOARD');
+    const [ana, ben, carla] = [await makeAccount('Ana Cruz', 'ACTIVE'), await makeAccount('Ben Reyes', 'ACTIVE'), await makeAccount('Carla Santos', 'ACTIVE')];
+    for (const a of [ana, ben, carla]) await staff.post(`/api/accounts/${a.id}/make-member`).send(FORM);
+    await approve(ben.id);
+    await decide(await loginAs('ADMIN'), carla.id, { decision: 'DISAPPROVED', boardDecisionDate: todayManila(), reason: 'No PMES' });
+
+    const waiting = await board.get('/api/accounts/membership-applications');
+    expect(waiting.status).toBe(200);
+    expect(waiting.body.counts).toEqual({ FOR_APPROVAL: 1, APPROVED: 1, NOT_APPROVED: 1 });
+    expect(waiting.body.rows).toMatchObject([{ id: ana.id, application: { decision: null } }]);
+    expect((await board.get('/api/accounts/membership-applications?status=APPROVED')).body.rows).toMatchObject([{ id: ben.id }]);
+    expect((await board.get('/api/accounts/membership-applications?status=NOT_APPROVED')).body.rows).toMatchObject([{ id: carla.id, application: { reason: 'No PMES' } }]);
+    expect((await board.get('/api/reports/home')).body.membershipForApproval).toBe(1);
+  });
+});
+
+describe('Apply for Membership on the Accounts list', () => {
+  it('is offered only to non-members with an active connection and no application in progress', async () => {
+    const staff = await loginAs('STAFF');
+    const ready = await makeAccount('Ana Ready', 'ACTIVE');
+    await makeAccount('Ben Pending', 'PENDING_INSTALLATION');
+    await makeAccount('Carla None');
+    const waiting = await makeAccount('Dina Waiting', 'ACTIVE');
+    await staff.post(`/api/accounts/${waiting.id}/make-member`).send(FORM);
+    const member = await makeAccount('Eli Member', 'ACTIVE');
+    await prisma.account.update({ where: { id: member.id }, data: { isMember: true, membershipStatus: 'MEMBER', memberNumber: '0099' } });
+
+    const rows = (await staff.get('/api/accounts')).body.rows as { id: number; canApply: boolean }[];
+    const canApply = (id: number) => rows.find((r) => r.id === id)?.canApply;
+    const others = rows.filter((r) => r.id !== ready.id);
+    expect(canApply(ready.id)).toBe(true);
+    // Pending installation, no connection, waiting for approval, and the member: no Apply.
+    expect(others).toHaveLength(4);
+    expect(others.every((r) => r.canApply === false)).toBe(true);
+    expect(canApply(waiting.id)).toBe(false);
+    expect(canApply(member.id)).toBe(false);
   });
 });

@@ -17,7 +17,7 @@ export async function resetDb() {
   await prisma.$transaction([
     prisma.$executeRawUnsafe("SELECT set_config('iwmpc.test_reset', 'on', true)"),
     prisma.$executeRawUnsafe(
-    'TRUNCATE loan_payment_lines, loan_deductions, loan_installments, loans, loan_type_changes, loan_types, access_grants, invoices, setting_changes, signature_images, bill_prints, audit_log, payments, sale_items, sales, price_changes, product_units, products, water_bills, meter_readings, rate_schedules, beneficiaries, water_connections, accounts, areas, settings, users RESTART IDENTITY CASCADE',
+    'TRUNCATE loan_payment_lines, loan_deductions, loan_installments, loans, loan_type_changes, loan_types, access_grants, invoices, setting_changes, signature_images, bill_prints, audit_log, payments, sale_items, sales, price_changes, product_units, products, water_bills, meter_readings, rate_schedules, membership_applications, beneficiaries, water_connections, accounts, areas, settings, users RESTART IDENTITY CASCADE',
     ),
   ]);
   await prisma.area.createMany({ data: [{ name: 'Narra' }, { name: 'Ipil' }] });

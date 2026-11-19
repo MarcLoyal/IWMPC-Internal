@@ -11,6 +11,7 @@ import { PurchasesTab } from '../components/PurchasesTab';
 import { PaymentDetails, PaymentStatusBadge } from '../components/PaymentDetails';
 import { LoanCard, LoansTab } from '../components/LoansTab';
 import type { MemberLoans } from '../lib/loans';
+import { MembershipDecisionModal } from '../components/MembershipDecision';
 import { Badge, Button, Card, Detail, Field, LinkButton, Loading, MemberBadge, Modal, Notice, PageHeader, PrintButton } from '../components/ui';
 
 type Tab = 'info' | 'water' | 'riceLpg' | 'loans' | 'transactions';
@@ -35,7 +36,7 @@ export function AccountProfile() {
   const settings = useLoad<Settings>('/settings');
   const loans = useLoad<MemberLoans>(`/loans/member/${id}`);
   const [tab, setTab] = useState<Tab>('info');
-  const [dialog, setDialog] = useState<null | 'connection'>(null);
+  const [dialog, setDialog] = useState<null | 'connection' | 'decision'>(null);
   const [statusChange, setStatusChange] = useState<Connection | null>(null);
   const [openPayment, setOpenPayment] = useState<Payment | null>(null);
   const [typeFilter, setTypeFilter] = useState<PaymentType | ''>('');
@@ -51,6 +52,23 @@ export function AccountProfile() {
   const shownPayments = typeFilter ? payments.filter((p) => p.type === typeFilter) : payments;
   const shownTotal = shownPayments.filter((p) => p.status === 'ACTIVE').reduce((sum, p) => sum + Number(p.amount), 0);
   const pending = account.membershipStatus === 'PENDING';
+  const forApproval = account.membershipStatus === 'FOR_APPROVAL';
+  const notApproved = account.membershipStatus === 'NOT_APPROVED';
+  const applications = data.membershipApplications ?? [];
+  const latest = applications[0] ?? null;
+  // A non-member with no application in progress, but no active water connection yet: the button
+  // stays in its place, greyed out, with the reason.
+  const canStartApplication = !account.isMember && (account.membershipStatus === 'NONE' || notApproved);
+  const applyBlocked =
+    canStartApplication && !data.canMakeMember
+      ? `Needs an active water connection first. ${
+          connections.some((c) => c.status === 'PENDING_INSTALLATION')
+            ? 'The connection is still Pending installation.'
+            : connections.some((c) => c.status === 'DISCONNECTED')
+              ? 'The connection is Disconnected.'
+              : 'This account has no water connection yet.'
+        }`
+      : '';
   const age = ageFrom(account.birthDate);
   const otherOwed = owed.filter((o) => o.type !== 'WATER_BILL');
   const paid = payments.filter((p) => p.status === 'ACTIVE');
@@ -87,7 +105,7 @@ export function AccountProfile() {
             <span>
               Area <strong className="text-slate-900">{account.area}</strong>
             </span>
-            <MemberBadge isMember={account.isMember} pending={pending} />
+            <MemberBadge isMember={account.isMember} status={account.membershipStatus} />
           </span>
         }
       >
@@ -101,10 +119,31 @@ export function AccountProfile() {
           ⚠ {w}
         </Notice>
       ))}
+      {forApproval && (
+        <Notice tone="warning" className="no-print mb-4 flex flex-wrap items-center justify-between gap-3">
+          <span>
+            <strong>Membership application for approval.</strong>
+            {latest && ` Applied ${formatDate(latest.appliedOn)}, submitted by ${latest.submittedBy}.`} The Admin records the Board&apos;s
+            decision. No membership fee can be received until it is approved.
+          </span>
+          {can('ADMIN') && (
+            <Button variant="primary" onClick={() => setDialog('decision')}>
+              Record Board Decision
+            </Button>
+          )}
+        </Notice>
+      )}
+      {notApproved && (
+        <Notice tone="info" className="no-print mb-4">
+          <strong>Membership application not approved</strong>
+          {latest?.boardDecisionDate && ` by the Board on ${formatDate(latest.boardDecisionDate)}`}.
+          {latest?.reason && ` Reason: ${latest.reason}.`} A new application can be submitted.
+        </Notice>
+      )}
       {pending && (
         <Notice tone="info" className="no-print mb-4 flex flex-wrap items-center justify-between gap-3">
           <span>
-            Waiting for the membership fee ({peso(settings.data?.membership_fee ?? 0)}). This account becomes a Member once the
+            Approved by the Board{account.boardDecisionDate ? ` on ${formatDate(account.boardDecisionDate)}` : ''}. Waiting for the membership fee ({peso(settings.data?.membership_fee ?? 0)}). This account becomes a Member once the
             Cashier records the payment.
           </span>
           {canDo('CASHIER') && (
@@ -194,8 +233,16 @@ export function AccountProfile() {
           )}
           {canEdit && data.canMakeMember && (
             <LinkButton to={`/accounts/${account.id}/make-member`} variant="success">
-              Make a Member
+              {notApproved ? 'Apply for Membership Again' : 'Apply for Membership'}
             </LinkButton>
+          )}
+          {canEdit && applyBlocked && (
+            <span className="flex flex-wrap items-center gap-3">
+              <Button variant="success" disabled>
+                Apply for Membership
+              </Button>
+              <span className="text-slate-600">{applyBlocked}</span>
+            </span>
           )}
           {canEdit && <Button onClick={() => setDialog('connection')}>+ Add Connection</Button>}
         </div>
@@ -276,10 +323,38 @@ export function AccountProfile() {
                 <Detail label="Attended PMES">{account.pmesAttended === null ? 'Not yet recorded' : account.pmesAttended ? 'Yes' : 'No'}</Detail>
                 <Detail label="Board decision">
                   {account.boardDecision
-                    ? `${account.boardDecision === 'APPROVED' ? 'Approved' : 'Disapproved'}${account.boardDecisionDate ? ` · ${formatDate(account.boardDecisionDate)}` : ''}`
-                    : 'Not yet decided'}
+                    ? `${account.boardDecision === 'APPROVED' ? 'Approved' : 'Not approved'}${account.boardDecisionDate ? ` · ${formatDate(account.boardDecisionDate)}` : ''}`
+                    : 'Waiting for approval'}
                 </Detail>
               </dl>
+              {applications.length > 0 && (
+                <div className="mt-6">
+                  <h4 className="mb-2 font-bold">Application history</h4>
+                  <ul className="divide-y divide-slate-100 rounded-lg border border-slate-200">
+                    {applications.map((a) => (
+                      <li key={a.id} className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 px-4 py-2.5">
+                        <span>
+                          Applied <strong>{formatDate(a.appliedOn)}</strong> <span className="text-slate-600">· submitted by {a.submittedBy}</span>
+                          {a.decision && (
+                            <span className="block text-sm text-slate-600">
+                              Board decision {formatDate(a.boardDecisionDate)}
+                              {a.reference && ` · ${a.reference}`} · recorded by {a.decidedBy}
+                              {a.reason && ` · Reason: ${a.reason}`}
+                            </span>
+                          )}
+                        </span>
+                        {a.decision === 'APPROVED' ? (
+                          <Badge tone="green">Approved</Badge>
+                        ) : a.decision === 'DISAPPROVED' ? (
+                          <Badge tone="gray">Not approved</Badge>
+                        ) : (
+                          <Badge tone="yellow">For approval</Badge>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
             </>
           )}
         </Card>
@@ -428,6 +503,18 @@ export function AccountProfile() {
         </Card>
       </section>
 
+      {dialog === 'decision' && (
+        <MembershipDecisionModal
+          accountId={account.id}
+          name={account.fullName}
+          application={latest}
+          onClose={() => setDialog(null)}
+          onSaved={() => {
+            setDialog(null);
+            void reload();
+          }}
+        />
+      )}
       {dialog === 'connection' && (
         <AddConnectionDialog
           accountId={account.id}

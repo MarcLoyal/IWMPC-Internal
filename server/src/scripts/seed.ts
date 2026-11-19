@@ -14,7 +14,7 @@ import { prisma } from '../lib/prisma';
 import { toDbDate, todayManila } from '../lib/dates';
 import { parseMoney } from '../lib/money';
 import { recordPayment } from '../services/invoices';
-import { startMembership } from '../services/membership';
+import { decideMembership, startMembership } from '../services/membership';
 import { nextNumber } from '../services/numbering';
 import { addDays, addMonths, periodOf } from '../lib/periods';
 import { refreshBillSettled, saveReadings } from '../services/water';
@@ -361,10 +361,14 @@ async function seed() {
         sharesAmount: parseMoney('1000.00'),
         meterRegisteredName: person.name,
         pmesAttended: true,
-        boardDecision: person.membership === 'member' ? 'APPROVED' : null,
-        boardDecisionDate: person.membership === 'member' ? toDbDate(applied) : null,
       }),
     );
+    // Members went through the Board; the 'pending' sample stays waiting for the Admin's approval.
+    if (person.membership === 'member') {
+      await prisma.$transaction((tx) =>
+        decideMembership(tx, id, { decision: 'APPROVED', boardDecisionDate: applied, reference: 'Board meeting', reason: '' }, admin.id),
+      );
+    }
     if (person.membership === 'member') {
       const date = daysAgo(day);
       await pay(id, 'MEMBERSHIP_FEE', '500.00', date);

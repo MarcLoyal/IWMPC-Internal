@@ -139,9 +139,12 @@ export interface AccountRow {
   area: string;
   areaId: number;
   isMember: boolean;
-  membershipStatus: 'NONE' | 'PENDING' | 'MEMBER';
+  /** PENDING = approved by the Admin (Board decision recorded), waiting for the membership fee. */
+  membershipStatus: MembershipStatus;
   connectionState?: 'NONE' | 'PENDING' | 'INSTALLED';
   lastPurchase?: { date: string; item: string; moreItems: number; amount: string } | null;
+  /** On the Accounts list: a non-member who can apply for membership now. */
+  canApply?: boolean;
   water?: WaterSummary;
 }
 
@@ -245,6 +248,31 @@ export interface AccountProfile {
   owed: OwedItem[];
   warnings: string[];
   canMakeMember: boolean;
+  /** Every membership application and the Board's decision on it, newest first. */
+  membershipApplications?: MembershipApplication[];
+}
+
+export type MembershipStatus = 'NONE' | 'FOR_APPROVAL' | 'PENDING' | 'NOT_APPROVED' | 'MEMBER';
+
+export interface MembershipApplication {
+  id: number;
+  appliedOn: string;
+  submittedAt: string;
+  submittedBy: string;
+  decision: 'APPROVED' | 'DISAPPROVED' | null;
+  boardDecisionDate: string | null;
+  reference: string;
+  reason: string;
+  decidedAt: string | null;
+  decidedBy: string | null;
+}
+
+export type ApplicationList = 'FOR_APPROVAL' | 'APPROVED' | 'NOT_APPROVED';
+
+export interface MembershipApplications {
+  list: ApplicationList;
+  counts: Record<ApplicationList, number>;
+  rows: { id: number; accountNumber: string; fullName: string; area: string; application: MembershipApplication | null }[];
 }
 
 export interface AccountList {
@@ -323,6 +351,8 @@ export interface HomeSummary {
   overdueWater: { count: number; total: string };
   /** Invoice numbers left in the booklet series; low when fewer than 2,000. */
   invoices?: { remaining: number; to: number; low: boolean };
+  /** Membership applications waiting for the Admin to record the Board's decision. */
+  membershipForApproval?: number;
 }
 
 export interface DailyReport {
