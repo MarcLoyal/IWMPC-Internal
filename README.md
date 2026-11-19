@@ -29,6 +29,12 @@ water billing and loans.
   with Personal Info, Water (connections) and All Transactions tabs, Print.
 - **Connections**: add a connection, Pending Installation → Active → Disconnected. Needed in 1A because
   a membership application requires an active connection. Readings and bills come in 1B.
+- **Installation fee before Active**: a new connection can be marked Active (Staff or Admin) only after
+  the installation fee is received at the Cashier (checked on the server; a voided fee does not count).
+  The Water tab shows "Installation fee paid / not yet paid". Only the **Admin** can mark one Active
+  without the fee in the system, with a required reason (e.g. installed before the system, paid on
+  paper, or waived); the reason goes in the Audit Log. Reconnecting is not affected, and the rule is off
+  when the installation fee in Settings is ₱0.
 - **Paper forms**: the account, Membership Application and Add Connection screens follow IWMPC's Application for
   Membership and water connection application (Form No. 2-A) field for field.
 - **Becoming a member** (a choice; only accounts with an active water connection can apply):

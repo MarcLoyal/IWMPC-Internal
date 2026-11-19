@@ -395,6 +395,11 @@ export function AccountProfile() {
                       <td className="td whitespace-nowrap">{formatDate(c.installationDate)}</td>
                       <td className="td">
                         <Badge tone={CONNECTION_TONE[c.status]}>{CONNECTION_STATUS[c.status]}</Badge>
+                        {c.status === 'PENDING_INSTALLATION' && Number(settings.data?.installation_fee ?? 0) > 0 && (
+                          <span className={`block text-sm ${c.installationFeePaid ? 'text-emerald-700' : 'text-amber-800'}`}>
+                            {c.installationFeePaid ? 'Installation fee paid' : 'Installation fee not yet paid'}
+                          </span>
+                        )}
                       </td>
                       {canEdit && (
                         <td className="td no-print text-right">
@@ -531,6 +536,10 @@ export function AccountProfile() {
         <ConnectionStatusDialog
           connection={statusChange}
           isMember={account.isMember}
+          installationFee={Number(settings.data?.installation_fee ?? 0)}
+          isAdmin={can('ADMIN')}
+          canReceive={canDo('CASHIER')}
+          accountId={account.id}
           onClose={() => setStatusChange(null)}
           onDone={() => {
             setStatusChange(null);
@@ -642,15 +651,27 @@ function AddConnectionDialog({
 function ConnectionStatusDialog({
   connection,
   isMember,
+  installationFee,
+  isAdmin,
+  canReceive,
+  accountId,
   onClose,
   onDone,
 }: {
   connection: Connection;
   isMember: boolean;
+  installationFee: number;
+  isAdmin: boolean;
+  canReceive: boolean;
+  accountId: number;
   onClose: () => void;
   onDone: () => void;
 }) {
   const installing = connection.status === 'PENDING_INSTALLATION';
+  // The installation fee must be received before a new connection can be Active (checked on the server).
+  const feeMissing = installing && installationFee > 0 && !connection.installationFeePaid;
+  const [override, setOverride] = useState(false);
+  const [reason, setReason] = useState('');
   const disconnecting = connection.status === 'ACTIVE';
   const [installationDate, setInstallationDate] = useState('');
   const [initialReading, setInitialReading] = useState('0');
@@ -664,6 +685,7 @@ function ConnectionStatusDialog({
       await api.patch(`/connections/${connection.id}`, {
         status: disconnecting ? 'DISCONNECTED' : 'ACTIVE',
         ...(installing ? { installationDate, initialReading: initialReading.trim() === '' ? 0 : Number(initialReading) } : {}),
+        ...(feeMissing && override ? { feeNotPaidReason: reason.trim() } : {}),
       });
       onDone();
     } catch (err) {
@@ -684,9 +706,17 @@ function ConnectionStatusDialog({
           <Button onClick={onClose} disabled={saving}>
             Cancel
           </Button>
-          <Button variant={disconnecting ? 'danger' : 'primary'} onClick={save} disabled={saving}>
-            {saving ? 'Saving…' : `Yes, ${title}`}
-          </Button>
+          {feeMissing && !override ? (
+            canReceive && (
+              <LinkButton to={`/cashier?account=${accountId}`} variant="primary">
+                Go to Cashier
+              </LinkButton>
+            )
+          ) : (
+            <Button variant={disconnecting ? 'danger' : 'primary'} onClick={save} disabled={saving || (feeMissing && override && !reason.trim())}>
+              {saving ? 'Saving…' : `Yes, ${title}`}
+            </Button>
+          )}
         </>
       }
     >
@@ -707,7 +737,29 @@ function ConnectionStatusDialog({
           </>
         )}
       </p>
-      {installing && (
+      {feeMissing && (
+        <Notice tone="warning" className="mt-4">
+          <strong>The installation fee ({peso(installationFee)}) has not been paid for this connection yet.</strong> Receive it at the
+          Cashier first. Then this connection can be marked Active.
+        </Notice>
+      )}
+      {feeMissing && isAdmin && (
+        <div className="mt-4 rounded-lg border border-slate-300 p-4">
+          <label className="flex items-start gap-3">
+            <input type="checkbox" className="mt-1 h-5 w-5" checked={override} onChange={(e) => setOverride(e.target.checked)} />
+            <span>
+              <span className="font-semibold">Admin: mark Active without the fee in the system</span>
+              <span className="block text-sm text-slate-600">For connections installed before the system was used (paid on paper), or a waived fee.</span>
+            </span>
+          </label>
+          {override && (
+            <Field label="Reason (required)" className="mt-3">
+              <input className="input" value={reason} onChange={(e) => setReason(e.target.value)} placeholder="e.g. Installed 2019, paid on paper receipt no. 1234" autoFocus />
+            </Field>
+          )}
+        </div>
+      )}
+      {installing && (!feeMissing || override) && (
         <div className="mt-4 grid gap-4 sm:grid-cols-2">
           <Field label="Installation date" hint="Leave blank to use today.">
             <input className="input" type="date" value={installationDate} onChange={(e) => setInstallationDate(e.target.value)} />
