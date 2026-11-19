@@ -38,7 +38,9 @@ water billing and loans.
 - **Paper forms**: the account, Membership Application and Add Connection screens follow IWMPC's Application for
   Membership and water connection application (Form No. 2-A) field for field.
 - **Becoming a member** (a choice; only accounts with an active water connection can apply):
-  1. **Staff** click *Submit Membership Application* and fill in the paper form → **For approval**.
+  1. **Staff** click *Apply for Membership* (on the account page of every non-member, and on each
+     non-member row of the Accounts list that can apply) and fill in the paper form → **For approval**.
+     Without an active water connection the button is greyed out with the reason.
   2. The **Board** decides in its meeting; the **Admin** (only the Admin, checked on the server) clicks
      *Record Board Decision*: Approved or Not approved, the date of the decision, an optional resolution
      no., and a reason when not approved. Staff cannot set the decision on the form.

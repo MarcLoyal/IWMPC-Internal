@@ -143,6 +143,8 @@ export interface AccountRow {
   membershipStatus: MembershipStatus;
   connectionState?: 'NONE' | 'PENDING' | 'INSTALLED';
   lastPurchase?: { date: string; item: string; moreItems: number; amount: string } | null;
+  /** On the Accounts list: a non-member who can apply for membership now. */
+  canApply?: boolean;
   water?: WaterSummary;
 }
 

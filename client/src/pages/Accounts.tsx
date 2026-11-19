@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { api, errorMessage } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import { formatDate, peso } from '../lib/format';
@@ -183,9 +183,25 @@ export function Accounts() {
                       <td className="px-4 py-1 align-middle">
                         <div className="flex flex-wrap items-center gap-x-2 leading-tight">
                           <span className="text-base font-bold text-slate-900">{a.fullName}</span>
-                          <Badge tone={a.isMember ? 'green' : 'gray'} small>
-                            {a.isMember ? 'Member' : 'Non-member'}
+                          <Badge tone={a.isMember ? 'green' : a.membershipStatus === 'FOR_APPROVAL' || a.membershipStatus === 'PENDING' ? 'yellow' : 'gray'} small>
+                            {a.isMember
+                              ? 'Member'
+                              : a.membershipStatus === 'FOR_APPROVAL'
+                                ? 'Non-member · for approval'
+                                : a.membershipStatus === 'PENDING'
+                                  ? 'Non-member · approved, fee not paid'
+                                  : 'Non-member'}
                           </Badge>
+                          {a.canApply && canDo('ACCOUNTS') && (
+                            <Link
+                              to={`/accounts/${a.id}/make-member`}
+                              onClick={(e) => e.stopPropagation()}
+                              onKeyDown={(e) => e.stopPropagation()}
+                              className="text-sm font-semibold text-brand-700 underline-offset-2 hover:underline"
+                            >
+                              Apply for Membership
+                            </Link>
+                          )}
                         </div>
                         <div className="text-xs leading-tight tabular-nums text-slate-500">
                           {a.accountNumber}

@@ -299,6 +299,8 @@ accountsRouter.get(
             : 'NONE',
         water: water(r.id),
         lastPurchase: lastPurchase.get(r.id) ?? null,
+        // A non-member who can apply for membership now (no application in progress, active water).
+        canApply: !cannotApply(r.membershipStatus, r.isMember) && r.connections.some((c) => c.status === 'ACTIVE'),
       })),
       offset,
       total,

@@ -393,3 +393,26 @@ describe('Membership approval (Board decision recorded by the Admin)', () => {
     expect((await board.get('/api/reports/home')).body.membershipForApproval).toBe(1);
   });
 });
+
+describe('Apply for Membership on the Accounts list', () => {
+  it('is offered only to non-members with an active connection and no application in progress', async () => {
+    const staff = await loginAs('STAFF');
+    const ready = await makeAccount('Ana Ready', 'ACTIVE');
+    await makeAccount('Ben Pending', 'PENDING_INSTALLATION');
+    await makeAccount('Carla None');
+    const waiting = await makeAccount('Dina Waiting', 'ACTIVE');
+    await staff.post(`/api/accounts/${waiting.id}/make-member`).send(FORM);
+    const member = await makeAccount('Eli Member', 'ACTIVE');
+    await prisma.account.update({ where: { id: member.id }, data: { isMember: true, membershipStatus: 'MEMBER', memberNumber: '0099' } });
+
+    const rows = (await staff.get('/api/accounts')).body.rows as { id: number; canApply: boolean }[];
+    const canApply = (id: number) => rows.find((r) => r.id === id)?.canApply;
+    const others = rows.filter((r) => r.id !== ready.id);
+    expect(canApply(ready.id)).toBe(true);
+    // Pending installation, no connection, waiting for approval, and the member: no Apply.
+    expect(others).toHaveLength(4);
+    expect(others.every((r) => r.canApply === false)).toBe(true);
+    expect(canApply(waiting.id)).toBe(false);
+    expect(canApply(member.id)).toBe(false);
+  });
+});

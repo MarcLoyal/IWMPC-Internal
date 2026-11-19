@@ -56,6 +56,19 @@ export function AccountProfile() {
   const notApproved = account.membershipStatus === 'NOT_APPROVED';
   const applications = data.membershipApplications ?? [];
   const latest = applications[0] ?? null;
+  // A non-member with no application in progress, but no active water connection yet: the button
+  // stays in its place, greyed out, with the reason.
+  const canStartApplication = !account.isMember && (account.membershipStatus === 'NONE' || notApproved);
+  const applyBlocked =
+    canStartApplication && !data.canMakeMember
+      ? `Needs an active water connection first. ${
+          connections.some((c) => c.status === 'PENDING_INSTALLATION')
+            ? 'The connection is still Pending installation.'
+            : connections.some((c) => c.status === 'DISCONNECTED')
+              ? 'The connection is Disconnected.'
+              : 'This account has no water connection yet.'
+        }`
+      : '';
   const age = ageFrom(account.birthDate);
   const otherOwed = owed.filter((o) => o.type !== 'WATER_BILL');
   const paid = payments.filter((p) => p.status === 'ACTIVE');
@@ -220,8 +233,16 @@ export function AccountProfile() {
           )}
           {canEdit && data.canMakeMember && (
             <LinkButton to={`/accounts/${account.id}/make-member`} variant="success">
-              {notApproved ? 'Submit New Membership Application' : 'Submit Membership Application'}
+              {notApproved ? 'Apply for Membership Again' : 'Apply for Membership'}
             </LinkButton>
+          )}
+          {canEdit && applyBlocked && (
+            <span className="flex flex-wrap items-center gap-3">
+              <Button variant="success" disabled>
+                Apply for Membership
+              </Button>
+              <span className="text-slate-600">{applyBlocked}</span>
+            </span>
           )}
           {canEdit && <Button onClick={() => setDialog('connection')}>+ Add Connection</Button>}
         </div>
